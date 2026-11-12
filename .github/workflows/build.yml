@@ -60,8 +60,7 @@ jobs:
         # Ubuntu's own archive only: the runners' Azure mirror has stalled for hours (see release.yml).
         timeout-minutes: 10
         run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then printf 'http://archive.ubuntu.com/ubuntu/	priority:1
-' | sudo tee /etc/apt/apt-mirrors.txt; fi
+          if [ -f /etc/apt/apt-mirrors.txt ]; then printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt; fi
           sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf file
