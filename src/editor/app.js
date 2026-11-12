@@ -1256,7 +1256,8 @@ export class App {
 
   title() {
     const name = this.path ? io.basename(this.path) : 'untitled';
-    return `Rigby2D - ${name}${this.dirty() ? ' *' : ''}`;
+    // Enhancements fork marker: remove once upstream carries these changes.
+    return `Rigby2D Enhancements - ${name}${this.dirty() ? ' *' : ''}`;
   }
 }
 

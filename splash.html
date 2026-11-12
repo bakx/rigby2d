@@ -42,6 +42,14 @@
         opacity: 1;
         transform: translate(-50%, -50%);
       }
+      /* Enhancements fork marker: remove once upstream carries these changes. */
+      #edition {
+        position: absolute;
+        left: 14px;
+        bottom: 10px;
+        letter-spacing: 0.04em;
+        color: #9cc1f5;
+      }
       #note {
         position: absolute;
         right: 14px;
@@ -57,6 +65,7 @@
   </head>
   <body data-tauri-drag-region>
     <img id="lockup" alt="Rigby2D" draggable="false" />
+    <div id="edition">Enhancements edition · AI optimized · github.com/bakx/rigby2d</div>
     <div id="note">Loading…</div>
     <script type="module" src="/src/splash/splash.js"></script>
   </body>

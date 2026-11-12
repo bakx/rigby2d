@@ -26,6 +26,9 @@ export const LINKS = {
   sponsor: 'https://github.com/sponsors/jaisurya-dev-art',
 };
 
+// Enhancements fork marker: remove once upstream carries these changes.
+export const EDITION = { label: 'Enhancements edition · AI optimized', url: 'https://github.com/bakx/rigby2d' };
+
 /**
  * A modal dialog; returns { body, close, footer, setFooter }. Escape and a click outside close it;
  * `onClose` runs however it closes. Built by ui.js dialog(), the shared dialog.
@@ -314,11 +317,11 @@ export function openAbout() {
         'div',
         null,
         h('div', { class: 'about-name' }, t('Rigby2D')),
-        h('div', { class: 'about-version' }, VERSION ? t('Version {version}', { version: VERSION }) : t('Development build'), h('span', { class: 'badge' }, t('Public beta'))),
+        h('div', { class: 'about-version' }, VERSION ? t('Version {version}', { version: VERSION }) : t('Development build'), h('span', { class: 'badge' }, t('Public beta')), h('span', { class: 'badge' }, EDITION.label)),
         h('p', { class: 'about-tagline' }, t('Open-source 2D skeletal animation for games, films and interactive experiences.')),
       ),
     ),
-    h('div', { class: 'about-links' }, link(t('Website'), LINKS.website), link(t('Documentation'), LINKS.docs), link(t('Source code'), LINKS.repo), link(t('Release notes'), LINKS.releaseNotes), link(t('Support Rigby2D'), LINKS.fund)),
+    h('div', { class: 'about-links' }, link(t('Website'), LINKS.website), link(t('Documentation'), LINKS.docs), link(t('Source code'), LINKS.repo), link(t('Release notes'), LINKS.releaseNotes), link(t('Support Rigby2D'), LINKS.fund), link('Enhancements fork', EDITION.url)),
     h('p', { class: 'about-fine' }, t('Rigby2D is free and stays free. Supporters pay for code signing and keep it moving.')),
     h(
       'p',
