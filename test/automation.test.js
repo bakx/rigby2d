@@ -125,6 +125,41 @@ test('attachments, skins and mesh weights edit and render in one batch', async (
   await tools.delete_skin({ name: 'outfit' }); assert.equal((await read()).skins.length, 0);
 });
 
+test('duplicate_attachment copies a weighted mesh independently and renders identically', async (t) => {
+  const { tools, read, dir } = await setup(t);
+  await fs.writeFile(path.join(dir, 'blue.png'), encodePng(rgba([20, 40, 230, 255])));
+  await tools.batch_edit({ operations: [
+    { op: 'make_mesh', slot: 'arm', attachment: 'arm', mode: 'grid', spacing: 5 },
+    { op: 'auto_weight', slot: 'arm', attachment: 'arm', bones: ['upperarm_l', 'forearm_l'] },
+    { op: 'duplicate_attachment', slot: 'arm', attachment: 'arm', new_name: 'arm_alt' },
+  ] });
+  let d = await read();
+  const [source, copy] = d.slots[0].attachments;
+  assert.equal(copy.name, 'arm_alt'); assert.deepEqual({ ...copy, name: source.name }, source);
+  assert.deepEqual((await tools.validate_project({})).errors ?? [], []);
+  await tools.render_preview({ animation: 'wave', times: [0], output: 'source.png' });
+  await tools.set_attachment_key({ animation: 'wave', slot: 'arm', time: 0, attachment: 'arm_alt' });
+  await tools.render_preview({ animation: 'wave', times: [0], output: 'copy.png' });
+  assert.deepEqual(await fs.readFile(path.join(dir, 'copy.png')), await fs.readFile(path.join(dir, 'source.png')));
+  await tools.replace_image({ slot: 'arm', attachment: 'arm_alt', image_file: 'blue.png' });
+  d = await read();
+  assert.deepEqual(d.slots[0].attachments[0], source); assert.notEqual(d.slots[0].attachments[1].image, source.image);
+  await assert.rejects(tools.duplicate_attachment({ slot: 'arm', attachment: 'arm', new_name: 'arm_alt' }), /already exists/);
+  await assert.rejects(tools.duplicate_attachment({ slot: 'leg', attachment: 'arm', new_name: 'x' }), /No slot/);
+  await assert.rejects(tools.duplicate_attachment({ slot: 'arm', attachment: 'nope', new_name: 'x' }), /No attachment/);
+});
+
+test('duplicate_attachment clones deform keys and can target another skin', () => {
+  const d = rig();
+  d.animations[0].deform.push({ skin: null, slot: 0, attachment: 'arm', keys: [{ time: 0, vertices: [1, 2], offset: 0 }] });
+  author.addSkin(d, { name: 'outfit' });
+  author.duplicateAttachment(d, { slot: 'arm', attachment: 'arm', new_name: 'arm_alt', target_skin: 'outfit' });
+  const outfit = author.attachmentList(d, 0, 'outfit');
+  assert.deepEqual(outfit.map((a) => a.name), ['arm_alt']);
+  assert.deepEqual(d.animations[0].deform.map((t) => [t.skin, t.attachment]), [[null, 'arm'], ['outfit', 'arm_alt']]);
+  assert.notEqual(d.animations[0].deform[1].keys, d.animations[0].deform[0].keys);
+});
+
 test('previews produce a single labeled PNG and GIF; video encodes frames', async (t) => {
   const { tools, dir } = await setup(t);
   const r = await tools.render_preview({ animation: 'wave', fps: 3, output: 'preview.png', layout: 'strip', labels: true, overlays: ['bones', 'pivots'] });

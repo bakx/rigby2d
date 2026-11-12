@@ -264,7 +264,7 @@ test('mcp server: answers over stdio', async () => {
   await new Promise((resolve) => child.on('close', resolve));
   const byId = new Map(lines.map((m) => [m.id, m]));
   assert.equal(byId.get(1).result.serverInfo.name, 'rigby2d');
-  assert.equal(byId.get(2).result.tools.length, 64);
+  assert.equal(byId.get(2).result.tools.length, 65);
   const names = byId.get(2).result.tools.map((t) => t.name);
   assert.equal(new Set(names).size, names.length, 'tool names are unique');
   for (const name of ['add_constraint', 'update_art', 'make_mesh', 'render_preview', 'render_video', 'bake_physics', 'merge_parts']) assert.ok(names.includes(name), name);

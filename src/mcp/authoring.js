@@ -60,6 +60,7 @@ export function createAuthoringTools(ws) {
       return { slot: args.slot, attachment: att.name, image: att.image };
     }),
     make('set_skin_attachment', 'Copy a default attachment into a skin under the same key, optionally substituting a PNG/WebP image.', { skin: str, slot: str, attachment: str, image_file: str }, ['skin', 'slot', 'attachment'], async (doc, args, p) => author.setSkinAttachment(doc, { ...args, ...(args.image_file ? { image: await importImage(ws, p, args.image_file) } : {}) })),
+    make('duplicate_attachment', 'Copy an attachment under a new name in the same slot with identical geometry, mesh weights and deform keys, independent of the source: give the copy other art with replace_image and swap it in with set_attachment_key. skin is where the source lives (default: default); target_skin defaults to skin.', { slot: str, attachment: str, new_name: str, skin: str, target_skin: str }, ['slot', 'attachment', 'new_name'], author.duplicateAttachment),
     make('make_mesh', 'Turn a region into an alpha outline or rectangular grid mesh. spacing controls grid cells in world units.', { ...mesh, mode: { type: 'string', enum: ['outline', 'grid'] }, spacing: { ...num, exclusiveMinimum: 0 } }, ['slot', 'attachment'], (doc, args, p) => {
       const { att } = author.attachmentOf(doc, args);
       const bytes = p.entries?.get(`images/${att.image ?? att.name}.png`);

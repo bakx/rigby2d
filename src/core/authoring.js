@@ -250,6 +250,23 @@ export function setSkinAttachment(doc, { skin, slot, attachment, image }) {
   if (i < 0) list.push(copy); else list[i] = copy;
   return { skin, slot, attachment };
 }
+/**
+ * Copies an attachment under a new name in the same slot: identical geometry, image, weights and
+ * deform keys, fully independent of the source. Lets replace_image give the copy other art that
+ * set_attachment_key swaps in while it deforms exactly like the original.
+ */
+export function duplicateAttachment(doc, { slot, attachment, new_name, skin, target_skin = skin }) {
+  validName(new_name);
+  const { si, att } = attachmentOf(doc, { slot, attachment, skin });
+  const list = attachmentList(doc, si, target_skin, true);
+  if (list.some((a) => a.name === new_name)) throw new Error(`Attachment '${new_name}' already exists in skin '${target_skin ?? 'default'}' of slot '${slot}'.`);
+  list.push({ ...structuredClone(att), name: new_name });
+  const skinKey = (name) => (!name || name === 'default' ? null : name);
+  for (const a of doc.animations) {
+    for (const t of a.deform.filter((t) => t.skin === skinKey(skin) && t.slot === si && t.attachment === attachment)) a.deform.push({ ...structuredClone(t), skin: skinKey(target_skin), attachment: new_name });
+  }
+  return { slot, attachment: new_name, skin: target_skin ?? 'default' };
+}
 
 export function makeMesh(doc, args, alpha) {
   const { si, list, att } = attachmentOf(doc, args);

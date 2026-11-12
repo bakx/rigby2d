@@ -21,7 +21,8 @@ or [llms.txt](https://rigby2d.com/llms.txt).
 - Re-import a PSD with `update_art` (`images` or `add_missing`) while retaining rigging, skins
   and clips. AutoRig accepts `joints` in canvas pixels, also from `<basename>.joints.json` or PSD layers named `joint:<name>` / `@<name>`.
 - Add attachments, replace pixels, and build skins with `add_attachment`, `replace_image`,
-  `add_skin`, `set_skin_attachment`, `delete_skin`.
+  `add_skin`, `set_skin_attachment`, `delete_skin`. `duplicate_attachment` copies an attachment
+  under a new name with the same mesh and weights, for a variant that deforms identically.
 - Convert regions to meshes and edit weights with `make_mesh`, `auto_weight`, `set_weights`,
   `smooth_weights`. Binding-layout changes report removed deform timelines. `merge_parts` joins
   rigid pieces (an upper arm and forearm) into one mesh weighted to both bones, so the elbow bends

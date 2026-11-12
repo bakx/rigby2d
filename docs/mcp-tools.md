@@ -9,7 +9,7 @@ root folders. Editing tools save the file in its own format, or a copy when `out
 
 <!-- generated:mcp-tools -->
 
-The server has **64 tools**. Parameters marked **required** must be given; the others are optional.
+The server has **65 tools**. Parameters marked **required** must be given; the others are optional.
 
 ### `world_to_local`
 
@@ -395,6 +395,21 @@ Copy a default attachment into a skin under the same key, optionally substitutin
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
+### `duplicate_attachment`
+
+Copy an attachment under a new name in the same slot with identical geometry, mesh weights and deform keys, independent of the source: give the copy other art with replace_image and swap it in with set_attachment_key. skin is where the source lives (default: default); target_skin defaults to skin.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `new_name` **required** | string |  |
+| `skin` | string |  |
+| `target_skin` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
 ### `make_mesh`
 
 Turn a region into an alpha outline or rectangular grid mesh. spacing controls grid cells in world units.
@@ -513,12 +528,12 @@ Simulate physics and replace affected bone channels with sampled keys. By defaul
 
 ### `batch_edit`
 
-Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
+Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot. |
+| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
