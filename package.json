@@ -56,6 +56,7 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
     "ag-psd": "^34.2.0",
+    "jpeg-js": "^0.4.4",
     "pyodide": "^314.0.7"
   },
   "devDependencies": {

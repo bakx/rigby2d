@@ -9,7 +9,7 @@ root folders. Editing tools save the file in its own format, or a copy when `out
 
 <!-- generated:mcp-tools -->
 
-The server has **64 tools**. Parameters marked **required** must be given; the others are optional.
+The server has **66 tools**. Parameters marked **required** must be given; the others are optional.
 
 ### `world_to_local`
 
@@ -116,7 +116,7 @@ Check a project for problems: structure, images missing from its work file, atla
 
 ### `convert_project`
 
-Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. Writes skeleton data only; atlas and images are not repacked. Refuses to replace an existing file unless overwrite is true.
+Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -124,6 +124,14 @@ Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3).
 | `output` **required** | string | Output file ending in .json or .skel, inside the workspace. Its folder must exist. |
 | `version` | `'3.8'`, `'4.2'`, `'4.3'` | Skeleton JSON format version (default 4.3; .skel is always 4.3). |
 | `overwrite` | boolean | Replace the output file if it exists (default false). |
+| `atlas` | boolean | Also pack the used images into <name>.atlas and <name>.png next to the output (default false). Region names are the attachment paths. |
+| `pma` | boolean | Premultiply the page pixels and write pma: true (default false). |
+| `filter` | `'Linear'`, `'Nearest'` | Page texture filter (default: the project's texture filter). |
+| `padding` | integer | Pixels between regions (default 2). |
+| `max_size` | integer | Largest page side; more pages are added when it overflows (default 4096). |
+| `power_of_two` | boolean | Round page sizes up to powers of two (default false). |
+| `scale` | number | Resample the images by this factor and write the atlas scale line; the skeleton is unchanged (default 1). |
+| `trim` | boolean | Crop each region to its alpha bounds and write offsets, so placement does not change (default false). |
 
 ### `export_defold_model`
 
@@ -351,7 +359,7 @@ Delete a skin and its deform/sequence timelines.
 
 ### `add_attachment`
 
-Add a PNG/WebP region to a slot, optionally in a named skin. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.
+Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -364,12 +372,13 @@ Add a PNG/WebP region to a slot, optionally in a named skin. Coordinates default
 | `rotation` | number |  |
 | `skin` | string |  |
 | `space` | `'local'`, `'world'` |  |
+| `cutout` | object | Remove a flat background first, as cutout_image does: background auto \| white \| #rrggbb, tolerance, mode flood \| global, holes, defringe, ink, despeckle, crop none \| bounds, mask_polygons. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
 ### `replace_image`
 
-Replace the pixels of an attachment, preserving its region geometry or mesh and weights.
+Replace the pixels of an attachment with a PNG/JPG/WebP (optionally cut out of its flat background; keep crop none so the geometry still fits), preserving its region geometry or mesh and weights.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -378,6 +387,7 @@ Replace the pixels of an attachment, preserving its region geometry or mesh and 
 | `attachment` **required** | string |  |
 | `skin` | string |  |
 | `image_file` **required** | string |  |
+| `cutout` | object | Remove a flat background first, as cutout_image does: background auto \| white \| #rrggbb, tolerance, mode flood \| global, holes, defringe, ink, despeckle, crop none \| bounds, mask_polygons. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
@@ -807,6 +817,37 @@ Copy animations from one character to another (any format): bones are matched au
 | `mapping` | object | Override bone matches: { sourceBone: targetBone }, or null to leave a source bone out. |
 | `replace` | boolean | Replace target animations with the same name. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `cutout_image`
+
+Remove the flat background of AI art (PNG, JPG or WebP inside the workspace) and the light fringe around its outline, writing a PNG with alpha. background: auto (the most common border colour), white or #rrggbb, matched within tolerance (0..255 max-channel distance). mode flood removes only background connected to the border; global every matching pixel. holes also removes enclosed background pockets of at least that many px (default off, so white highlights inside white fur stay). defringe un-mixes the band of that many px next to the removed background against the background colour, estimating alpha relative to ink, the outline colour (default: the darkest pixels of the band). despeckle drops opaque islands under that many px (default 400). mask_polygons ([{points, mode keep | erase, feather}] in canvas px) cut parts out of one flat image. crop none (default) keeps the canvas so registered layers stay registered; bounds crops and returns the offset. Returns the bounds, removed pixel count, background colour used and a warning when the background was not uniform.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `image_file` **required** | string | PNG, JPG or WebP (WebP needs FFmpeg on PATH). |
+| `output` **required** | string | PNG to write, inside the workspace. |
+| `background` | string | auto (the most common border colour, default), white or #rrggbb. |
+| `tolerance` | number | Max-channel distance to the background colour that still counts as background (default 8). |
+| `mode` | `'flood'`, `'global'` | flood (default): only background connected to the border; global: every matching pixel. |
+| `holes` | integer |  |
+| `defringe` | integer |  |
+| `ink` | string | Outline colour #rrggbb for the alpha estimate (default: the darkest pixels of the band). |
+| `despeckle` | integer |  |
+| `crop` | `'none'`, `'bounds'` |  |
+| `mask_polygons` | list of object |  |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `build_psd`
+
+Build a layered PSD from image files (PNG, JPG or WebP inside the workspace): one layer per file, named and ordered as given (the first is the bottom layer), each placed at x, y on the canvas (default 0, 0, so cutouts made with crop none keep their registration). The canvas defaults to the extent of the layers. Feed the PSD to detect_parts and autorig.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `output` **required** | string | PSD to write, inside the workspace. |
+| `layers` **required** | list of object |  |
+| `width` | integer |  |
+| `height` | integer |  |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
 ### `add_actor`

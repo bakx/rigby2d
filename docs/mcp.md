@@ -20,6 +20,10 @@ or [llms.txt](https://rigby2d.com/llms.txt).
   `set_constraint`, `delete_constraint`; animate them with `set_constraint_key`.
 - Re-import a PSD with `update_art` (`images` or `add_missing`) while retaining rigging, skins
   and clips. AutoRig accepts `joints` in canvas pixels, also from `<basename>.joints.json` or PSD layers named `joint:<name>` / `@<name>`.
+- Prepare flat AI art with `cutout_image` (background off, fringe un-mixed, polygon masks) and
+  `build_psd` (a layered PSD from PNG/JPG/WebP files); `add_attachment` and `replace_image` take
+  the same `cutout` options. `convert_project` with `atlas: true` packs the images into
+  `<name>.atlas` and `<name>.png` pages next to the skeleton (`pma`, `trim`, `scale`, `max_size`).
 - Add attachments, replace pixels, and build skins with `add_attachment`, `replace_image`,
   `add_skin`, `set_skin_attachment`, `delete_skin`.
 - Convert regions to meshes and edit weights with `make_mesh`, `auto_weight`, `set_weights`,
@@ -229,10 +233,11 @@ structured content and as JSON text.
 - **Round trip:** the check allows the rounding skeleton files use (5 decimals), compares bezier
   curves by kind (files store rounded absolute control points) and ignores format bookkeeping that
   is not rig data.
-- **Conversion** writes skeleton data only. The texture atlas is not repacked: keep using the
-  existing `.atlas` and page images, or export from the Rigby2D editor. `.rigby` work files are
-  written by the editor, which holds the images. An existing output file is only replaced with
-  `overwrite: true`.
+- **Conversion** writes skeleton data, and with `atlas: true` also packs the images the skeleton
+  uses into `<name>.atlas` and `<name>.png` next to it (`pma`, `filter`, `padding`, `max_size`,
+  `power_of_two`, `trim`, `scale`). Without it, keep using the existing `.atlas` and page images.
+  `.rigby` work files are written by the editor, which holds the images. Existing output files are
+  only replaced with `overwrite: true`.
 
 ## Security
 

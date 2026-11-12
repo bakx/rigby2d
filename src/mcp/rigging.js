@@ -14,6 +14,8 @@ import { EDIT, OUTPUT, OVERWRITE, edit, save } from './edits.js';
 import { alphaOf as alphaChannel, decodePng, encodePng } from './png.js';
 import { ToolError } from './protocol.js';
 import { PATH, READ_ONLY, loadProject } from './tools.js';
+import { CUTOUT, cutoutArgs, readImageFile } from './authoring.js';
+import { cutout } from '../core/cutout.js';
 
 const PSD = { type: 'string', description: 'Layered artwork (.psd) inside the workspace, one layer per body part. Instead of path.' };
 const ROLES = { type: 'object', additionalProperties: { type: 'string', enum: [...PART_ROLES, 'none'] }, description: "Override detected roles: { layerName: role }. 'none' leaves a layer unrigged." };
@@ -232,6 +234,14 @@ function updateArt(doc, project, art, mode) {
   return { matched: changed, added, unmatchedLayers, slotsWithoutLayer };
 }
 
+/** A new output file inside the workspace with extension `ext`; refuses an existing one unless `overwrite`. */
+async function outputFile(ws, output, ext, overwrite) {
+  if (path.extname(output).toLowerCase() !== ext) throw new ToolError(`The output must end in ${ext}.`);
+  const target = await ws.writable(output);
+  if (!overwrite && (await fs.stat(target).then(() => true, () => false))) throw new ToolError(`${output} already exists. Pass overwrite: true to replace it.`);
+  return target;
+}
+
 export function createRiggingTools(ws) {
   return [
     {
@@ -369,6 +379,42 @@ export function createRiggingTools(ws) {
           }
           return names.length === 1 ? results[0] : { animations: results };
         });
+      },
+    },
+    {
+      name: 'cutout_image',
+      title: 'Cutout image',
+      description: 'Remove the flat background of AI art (PNG, JPG or WebP inside the workspace) and the light fringe around its outline, writing a PNG with alpha. background: auto (the most common border colour), white or #rrggbb, matched within tolerance (0..255 max-channel distance). mode flood removes only background connected to the border; global every matching pixel. holes also removes enclosed background pockets of at least that many px (default off, so white highlights inside white fur stay). defringe un-mixes the band of that many px next to the removed background against the background colour, estimating alpha relative to ink, the outline colour (default: the darkest pixels of the band). despeckle drops opaque islands under that many px (default 400). mask_polygons ([{points, mode keep | erase, feather}] in canvas px) cut parts out of one flat image. crop none (default) keeps the canvas so registered layers stay registered; bounds crops and returns the offset. Returns the bounds, removed pixel count, background colour used and a warning when the background was not uniform.',
+      inputSchema: { type: 'object', properties: { image_file: { type: 'string', description: 'PNG, JPG or WebP (WebP needs FFmpeg on PATH).' }, output: { type: 'string', description: 'PNG to write, inside the workspace.' }, ...CUTOUT.properties, overwrite: OVERWRITE }, required: ['image_file', 'output'], additionalProperties: false },
+      annotations: { ...EDIT, destructiveHint: false },
+      handler: async (args) => {
+        const target = await outputFile(ws, args.output, '.png', args.overwrite);
+        let result;
+        try { result = cutout(await readImageFile(await ws.existing(args.image_file)), cutoutArgs(args)); } catch (e) { throw new ToolError(e.message); }
+        await fs.writeFile(target, encodePng(result.image));
+        const { image, ...info } = result;
+        return { file: target, width: image.width, height: image.height, ...info };
+      },
+    },
+    {
+      name: 'build_psd',
+      title: 'Build PSD',
+      description: 'Build a layered PSD from image files (PNG, JPG or WebP inside the workspace): one layer per file, named and ordered as given (the first is the bottom layer), each placed at x, y on the canvas (default 0, 0, so cutouts made with crop none keep their registration). The canvas defaults to the extent of the layers. Feed the PSD to detect_parts and autorig.',
+      inputSchema: { type: 'object', properties: { output: { type: 'string', description: 'PSD to write, inside the workspace.' }, layers: { type: 'array', minItems: 1, items: { type: 'object', properties: { name: { type: 'string' }, image_file: { type: 'string' }, x: { type: 'integer' }, y: { type: 'integer' } }, required: ['name', 'image_file'], additionalProperties: false } }, width: { type: 'integer', minimum: 1 }, height: { type: 'integer', minimum: 1 }, overwrite: OVERWRITE }, required: ['output', 'layers'], additionalProperties: false },
+      annotations: { ...EDIT, destructiveHint: false },
+      handler: async (args) => {
+        const target = await outputFile(ws, args.output, '.psd', args.overwrite);
+        let writePsd;
+        try { ({ writePsd } = await import('ag-psd')); } catch { throw new ToolError('Writing PSD files needs the ag-psd package: run npm install in the Rigby2D folder.'); }
+        const children = [];
+        for (const l of args.layers) {
+          const img = await readImageFile(await ws.existing(l.image_file));
+          children.push({ name: l.name, left: l.x ?? 0, top: l.y ?? 0, imageData: { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.length) } });
+        }
+        const width = args.width ?? Math.max(...children.map((c) => c.left + c.imageData.width));
+        const height = args.height ?? Math.max(...children.map((c) => c.top + c.imageData.height));
+        await fs.writeFile(target, new Uint8Array(writePsd({ width, height, children }, { noBackground: true, generateThumbnail: false })));
+        return { file: target, width, height, layers: children.map((c) => c.name) };
       },
     },
   ];

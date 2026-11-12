@@ -33,8 +33,9 @@ they do not change an already-open editor document. Reload that document after e
 | Region attachments and skins | `add_attachment`, `replace_image`, `add_skin`, `set_skin_attachment`, `delete_skin` | `Slot.add_attachment` using an existing project image; `add_skin`, `Skin.set_attachment/delete` | Yes |
 | Meshes and weights | `make_mesh` outline/grid, `auto_weight`, `set_weights`, `smooth_weights`, `merge_parts` (join rigid pieces into one bending mesh) | `Slot.make_mesh`, `Mesh.data/vertices/triangles/weights`, weight methods | Yes, including manual vertex editing |
 | Events | `add_event`, `set_event_key` | `add_event`, `events`, `Animation.key_event` | Yes |
+| Art preparation | `cutout_image` (flat background off, fringe un-mixed, `mask_polygons` cut parts from one image), `build_psd` (layers from PNG/JPG/WebP), `cutout` option on `add_attachment` / `replace_image` | Use MCP | Image import |
 | PSD rigging and art updates | `detect_parts`, `autorig`, `update_art` | Use MCP for filesystem/image import | AutoRig and image tools |
-| Preview and export | `render_preview`, `render_video`, `export_sprite_sheet` | Use MCP or editor | Character and scene rendering |
+| Preview and export | `render_preview`, `render_video`, `export_sprite_sheet`, `convert_project` with `atlas: true` (.atlas + .png pages; `pma`, `trim`, `scale`, `max_size`) | Use MCP or editor | Character and scene rendering, Export |
 | Physics baking | `bake_physics` | Use MCP | Live simulation |
 | Quality checks | `validate_project`, `lint_animations` | Rig report add-on | Visual preview |
 
@@ -44,14 +45,19 @@ needs no pixels. Import new image files through MCP or the editor first.
 
 ## Recommended loop
 
-1. Import layered PSD art. Run `detect_parts`; correct `roles`/`sides` and supply known `joints`.
+1. Prepare the art. Flat AI renders (JPG/PNG on white) go through `cutout_image` per part, with
+   `crop: "none"` so the layers stay registered and `mask_polygons` to cut parts out of one image;
+   `build_psd` then makes the layered PSD. Run `detect_parts`; correct `roles`/`sides` and supply
+   known `joints`.
 2. Run `autorig` to a new `.rigby`; inspect the resulting bones, slots, skins and constraints.
 3. Use `batch_edit` for one logical change: slot defaults, animation creation, keys, constraint
    mix/bend, attachments and mesh weights. File arguments are omitted inside operations.
 4. Use `set_ik_target_key` for a world-space hand/foot target. `world_to_local` converts a point
    into a named bone's coordinates without editing anything.
 5. Run `render_preview` with `fps: 15`, `layout: "grid"`, `scale: 0.5`, and an output PNG.
-   Inspect the image, then use `validate_project` and `lint_animations` before export.
+   Inspect the image, then use `validate_project` and `lint_animations` before export. Export
+   with `convert_project` and `atlas: true` (`pma`, `trim`, `scale`, `max_size`): the .json or .skel
+   plus `<name>.atlas` and `<name>.png`, which `validate_project` checks.
 6. When art changes, use `update_art` with `mode: "images"` (default). It matches layer names
    to attachment/image names, preserves topology and weights, and rebinds mesh vertices to the
    new layer rectangle. `add_missing` also attaches new layers to matching AutoRig bones.

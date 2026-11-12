@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as author from '../core/authoring.js';
+import { cutout } from '../core/cutout.js';
 import { uniqueName } from '../core/model.js';
 import { poseAt } from '../core/keying.js';
 import { setKey } from '../core/animation.js';
@@ -17,21 +18,62 @@ const names = { type: 'array', items: str };
 const settings = { type: 'object', description: 'Constraint settings in skeleton JSON spelling (e.g. bendPositive, mix, rotate, damping, inertiaGlobal).' };
 const mesh = { slot: str, attachment: str, skin: str };
 
-/** Images are converted to the work-file PNG format. Importing never changes another attachment's shared image. */
-export async function importImage(ws, p, file) {
-  if (p.format !== 'rigby') throw new ToolError('Adding images needs a .rigby work file.');
-  const source = await ws.existing(file);
+const int = (minimum) => ({ type: 'integer', minimum });
+/** The cutout options (see cutout_image), as tool arguments. */
+export const CUTOUT = {
+  type: 'object',
+  description: 'Remove a flat background first, as cutout_image does: background auto | white | #rrggbb, tolerance, mode flood | global, holes, defringe, ink, despeckle, crop none | bounds, mask_polygons.',
+  properties: {
+    background: { type: 'string', description: "auto (the most common border colour, default), white or #rrggbb." },
+    tolerance: { ...num, minimum: 0, maximum: 255, description: 'Max-channel distance to the background colour that still counts as background (default 8).' },
+    mode: { type: 'string', enum: ['flood', 'global'], description: 'flood (default): only background connected to the border; global: every matching pixel.' },
+    holes: int(0),
+    defringe: int(0),
+    ink: { type: 'string', description: 'Outline colour #rrggbb for the alpha estimate (default: the darkest pixels of the band).' },
+    despeckle: int(0),
+    crop: { type: 'string', enum: ['none', 'bounds'] },
+    mask_polygons: { type: 'array', items: { type: 'object', properties: { points: { type: 'array', minItems: 3, items: { type: 'array', items: num, minItems: 2, maxItems: 2 } }, mode: { type: 'string', enum: ['keep', 'erase'] }, feather: { ...num, minimum: 0 } }, required: ['points'], additionalProperties: false } },
+  },
+  additionalProperties: false,
+};
+/** cutout() options from tool arguments. */
+export function cutoutArgs(a) {
+  const o = {};
+  for (const k of ['background', 'tolerance', 'mode', 'holes', 'defringe', 'ink', 'despeckle', 'crop']) if (a[k] !== undefined) o[k] = a[k];
+  if (a.mask_polygons) o.maskPolygons = a.mask_polygons;
+  return o;
+}
+
+/** Decodes a PNG, JPG or WebP file (WebP through FFmpeg) to { width, height, data }. */
+export async function readImageFile(source) {
   const ext = path.extname(source).toLowerCase();
-  if (!['.png', '.webp'].includes(ext)) throw new ToolError('Images must be PNG or WebP.');
+  if (!['.png', '.webp', '.jpg', '.jpeg'].includes(ext)) throw new ToolError('Images must be PNG, JPG or WebP.');
   let bytes = await fs.readFile(source);
+  if (ext === '.jpg' || ext === '.jpeg') {
+    const { default: jpeg } = await import('jpeg-js');
+    let j;
+    try { j = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 }); } catch (e) { throw new ToolError(`Cannot decode the JPG: ${e.message}`); }
+    return { width: j.width, height: j.height, data: j.data };
+  }
   if (ext === '.webp') {
     try {
       const r = await promisify(execFile)('ffmpeg', ['-v', 'error', '-i', source, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { encoding: 'buffer', maxBuffer: 128 * 1024 * 1024, windowsHide: true });
       bytes = r.stdout;
     } catch (e) { throw new ToolError(`WebP import needs FFmpeg on PATH: ${e.message}`); }
   }
-  const pixels = decodePng(bytes);
-  const base = path.basename(source, ext).replace(/[\\/:*?"<>|]/g, '_');
+  return decodePng(bytes);
+}
+
+/**
+ * Images are converted to the work-file PNG format, after the optional `cut` (cutout options).
+ * Importing never changes another attachment's shared image.
+ */
+export async function importImage(ws, p, file, cut) {
+  if (p.format !== 'rigby') throw new ToolError('Adding images needs a .rigby work file.');
+  const source = await ws.existing(file);
+  let pixels = await readImageFile(source);
+  if (cut) pixels = cutout(pixels, cutoutArgs(cut)).image;
+  const base = path.basename(source, path.extname(source)).replace(/[\\/:*?"<>|]/g, '_');
   const name = uniqueName(base, (n) => p.doc.images.some((i) => i.name === n) || p.entries.has(`images/${n}.png`));
   p.entries.set(`images/${name}.png`, encodePng(pixels));
   p.doc.images.push({ name, path: null, width: pixels.width, height: pixels.height });
@@ -53,10 +95,10 @@ export function createAuthoringTools(ws) {
     make('set_constraint_key', 'Key constraint values: IK mix/softness/bendPositive/compress/stretch; transform mixes; path position/spacing/mixes; physics inertia/strength/damping/mass/wind/gravity/mix; slider time/mix.', { animation: str, constraint: str, time: { ...num, minimum: 0 }, values: { type: 'object' }, curve: CURVE }, ['animation', 'constraint', 'time', 'values'], author.keyConstraint),
     make('add_skin', 'Add an empty skin; slots without overrides retain the default attachments.', { name: str }, ['name'], author.addSkin),
     make('delete_skin', 'Delete a skin and its deform/sequence timelines.', { name: str }, ['name'], author.deleteSkin),
-    make('add_attachment', 'Add a PNG/WebP region to a slot, optionally in a named skin. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.', { slot: str, name: str, image_file: str, x: num, y: num, rotation: num, skin: str, space: { type: 'string', enum: ['local', 'world'] } }, ['slot', 'name', 'image_file'], async (doc, args, p) => author.addAttachment(doc, { ...args, image: await importImage(ws, p, args.image_file) })),
-    make('replace_image', 'Replace the pixels of an attachment, preserving its region geometry or mesh and weights.', { ...mesh, image_file: str }, ['slot', 'attachment', 'image_file'], async (doc, args, p) => {
+    make('add_attachment', 'Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.', { slot: str, name: str, image_file: str, x: num, y: num, rotation: num, skin: str, space: { type: 'string', enum: ['local', 'world'] }, cutout: CUTOUT }, ['slot', 'name', 'image_file'], async (doc, args, p) => author.addAttachment(doc, { ...args, image: await importImage(ws, p, args.image_file, args.cutout) })),
+    make('replace_image', 'Replace the pixels of an attachment with a PNG/JPG/WebP (optionally cut out of its flat background; keep crop none so the geometry still fits), preserving its region geometry or mesh and weights.', { ...mesh, image_file: str, cutout: CUTOUT }, ['slot', 'attachment', 'image_file'], async (doc, args, p) => {
       const { att } = author.attachmentOf(doc, args);
-      att.image = await importImage(ws, p, args.image_file);
+      att.image = await importImage(ws, p, args.image_file, args.cutout);
       return { slot: args.slot, attachment: att.name, image: att.image };
     }),
     make('set_skin_attachment', 'Copy a default attachment into a skin under the same key, optionally substituting a PNG/WebP image.', { skin: str, slot: str, attachment: str, image_file: str }, ['skin', 'slot', 'attachment'], async (doc, args, p) => author.setSkinAttachment(doc, { ...args, ...(args.image_file ? { image: await importImage(ws, p, args.image_file) } : {}) })),

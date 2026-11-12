@@ -68,7 +68,7 @@ const PYODIDE = ['package.json', 'pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.
 for (const f of PYODIDE) if (fs.existsSync(path.join(nm, 'pyodide', f))) copy(path.join(nm, 'pyodide', f), path.join(server, 'node_modules', 'pyodide', f));
 // Only what Node loads: package.json, the licence, the main file and the built code (dist/, lib/).
 // Sources, typings, maps, dev scripts and caches (.v8-cache) stay out.
-for (const dep of ['ag-psd', 'base64-js', 'pako']) {
+for (const dep of ['ag-psd', 'base64-js', 'pako', 'jpeg-js']) {
   const from = path.join(nm, dep);
   const main = path.normalize(JSON.parse(fs.readFileSync(path.join(from, 'package.json'), 'utf8')).main ?? 'index.js');
   copyDir(from, path.join(server, 'node_modules', dep), (f) => {
