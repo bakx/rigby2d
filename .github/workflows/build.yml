@@ -1,0 +1,80 @@
+# Builds the editor for Windows (installers, portable) and Linux (AppImage, .deb) and the AI
+# assistant extension (.mcpb) on every push, and attaches them to the run as artifacts (Actions tab ▸
+# the run ▸ Artifacts). The full release build with macOS, runtimes and signing stays in release.yml.
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['*']
+    paths-ignore: ['site/**', 'docs/**', '**.md']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:mcpb
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rigby2d-${{ steps.version.outputs.version }}-windows
+          path: |
+            src-tauri/target/release/bundle/msi/Rigby2D_*_x64_en-US.msi
+            src-tauri/target/release/bundle/nsis/Rigby2D_*_x64-setup.exe
+            src-tauri/target/release/rigby2d.exe
+            dist-mcpb/Rigby2D-AI-*.mcpb
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: System libraries for Tauri
+        # Ubuntu's own archive only: the runners' Azure mirror has stalled for hours (see release.yml).
+        timeout-minutes: 10
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then printf 'http://archive.ubuntu.com/ubuntu/	priority:1
+' | sudo tee /etc/apt/apt-mirrors.txt; fi
+          sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf file
+
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run build -- --bundles appimage,deb
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rigby2d-${{ steps.version.outputs.version }}-linux
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
