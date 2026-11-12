@@ -9,6 +9,33 @@ It uses the same runtime as the editor and games (`src/core`) and runs on Node.j
 clone of the repository is enough for every tool except `run_script` (Pyodide) and reading PSD
 files (ag-psd): run `npm install` once in the Rigby2D folder to use them.
 
+Video export and WebP image import additionally require **FFmpeg on PATH**. PNG/GIF previews
+and PNG image import work without FFmpeg. For the recommended authoring loop and conventions,
+read [the automation guide](https://github.com/jaisurya-dev-art/rigby2d/blob/develop/AGENTS.md)
+or [llms.txt](https://rigby2d.com/llms.txt).
+
+### Automation workflows
+
+- Create/edit/delete IK, transform, path, physics and slider constraints with `add_constraint`,
+  `set_constraint`, `delete_constraint`; animate them with `set_constraint_key`.
+- Re-import a PSD with `update_art` (`images` or `add_missing`) while retaining rigging, skins
+  and clips. AutoRig accepts `joints` in canvas pixels, also from `<basename>.joints.json` or PSD layers named `joint:<name>` / `@<name>`.
+- Add attachments, replace pixels, and build skins with `add_attachment`, `replace_image`,
+  `add_skin`, `set_skin_attachment`, `delete_skin`.
+- Convert regions to meshes and edit weights with `make_mesh`, `auto_weight`, `set_weights`,
+  `smooth_weights`. Binding-layout changes report removed deform timelines. `merge_parts` joins
+  rigid pieces (an upper arm and forearm) into one mesh weighted to both bones, so the elbow bends
+  without a corner.
+- Use `space: "world"` for translate/rotate keys, `set_ik_target_key` for direct IK positioning,
+  and `world_to_local` for read-only conversion.
+- `render_preview` writes one labeled PNG strip/grid or GIF; `render_video` writes character
+  WebM/MP4 clips with audio. Scene rendering remains in the editor.
+- `lint_animations` reports advisory motion issues; `validate_project` includes these under
+  `animationWarnings`. `bake_physics` samples physics to bone keys and disables it in the clip
+  by default. Bones driven by multiple constraint families are refused.
+- `batch_edit` accepts the bone/key, constraint, attachment, skin, mesh, event, pose, face,
+  slot, rename/delete, film-output/audio and physics-baking edits in one atomic transaction.
+
 ## Setup
 
 **Claude Desktop, the easy way (Windows, macOS):** the Rigby2D extension is one file.

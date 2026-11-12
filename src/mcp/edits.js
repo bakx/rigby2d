@@ -16,6 +16,10 @@ import { transform } from '../core/math.js';
 import { zip } from '../editor/zip.js';
 import { ToolError } from './protocol.js';
 import { PATH, loadProject } from './tools.js';
+import { worldKeyValue } from '../core/authoring.js';
+import { createAuthoringTools } from './authoring.js';
+import { createFilmTools } from './film.js';
+import { bakeTool } from './rendering.js';
 
 const CURVES = { linear: LINEAR, stepped: STEPPED, easeIn: EASE_IN, easeOut: EASE_OUT, easeInOut: EASE_IN_OUT };
 const CHANNELS = ['rotate', 'translate', 'scale', 'shear'];
@@ -269,6 +273,7 @@ export function createEditTools(ws) {
           x: { type: 'number', description: 'translate/shear: added to the setup value; scale: factor.' },
           y: { type: 'number', description: 'translate/shear: added to the setup value; scale: factor.' },
           curve: CURVE,
+          space: { type: 'string', enum: ['local', 'world'], description: 'World space uses absolute translate/rotate values in the evaluated pose at time.' },
         },
         required: ['path', 'animation', 'bone', 'channel', 'time'],
         additionalProperties: false,
@@ -277,7 +282,7 @@ export function createEditTools(ws) {
       apply: (doc, args) => {
         const anim = animationOf(doc, args.animation);
         const bone = boneIndex(doc, args.bone);
-        const value = channelValue(args.channel, args);
+        const value = args.space === 'world' ? worldKeyValue(doc, anim, bone, args.channel, args.time, args) : channelValue(args.channel, args);
         const keys = anim.boneTimelineMut(bone)[args.channel];
         const time = roundTime(args.time);
         const i = setKey(keys, time, value);
@@ -384,8 +389,9 @@ export function createEditTools(ws) {
     },
   ];
   // Each tool loads the project, applies its edit, validates and saves.
-  for (const t of tools) t.handler = (args) => edit(ws, args, (doc) => t.apply(doc, args));
-  return [...tools, batchTool(ws, tools)];
+  for (const t of tools) t.handler = (args) => edit(ws, args, (doc, p) => t.apply(doc, args, p));
+  const authoring = [...createAuthoringTools(ws), bakeTool(ws)];
+  return [...tools, ...authoring, batchTool(ws, [...tools, ...authoring, ...createFilmTools(ws)])];
 }
 
 // ---- batch ------------------------------------------------------------------------------------
@@ -438,16 +444,16 @@ function batchTool(ws, tools) {
         const problems = checkArguments(op.schema, o);
         if (problems.length) throw new ToolError(`Operation ${i + 1} (${o.op}): ${problems.join('; ')}.`);
       });
-      return edit(ws, args, (doc) => {
+      return edit(ws, args, async (doc, p) => {
         const counts = {};
-        args.operations.forEach((o, i) => {
+        for (const [i, o] of args.operations.entries()) {
           try {
-            ops.get(o.op).tool.apply(doc, o);
+            await ops.get(o.op).tool.apply(doc, o, p);
           } catch (e) {
             throw new ToolError(`Operation ${i + 1} (${o.op}) failed, so nothing was saved: ${e.message}`);
           }
           counts[o.op] = (counts[o.op] ?? 0) + 1;
-        });
+        }
         return { applied: args.operations.length, operations: counts, animations: doc.animations.map((a) => ({ name: a.name, duration: a.duration })) };
       });
     },

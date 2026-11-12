@@ -16,6 +16,7 @@ import { Clipper } from './clipping.js';
 import { LINEAR, STEPPED, bezierFor } from './curve.js';
 import { Pose } from './pose.js';
 import { INHERIT_MODES, Skeleton, makeBone } from './model.js';
+import { constraintChannels, setConstraintCurve } from './constraintkeys.js';
 
 // ---- helpers ----------------------------------------------------------------------------------
 
@@ -964,6 +965,20 @@ function writeAnimation(anim, sk, { v4, boneName, slotName, warnings }) {
   }
   for (const [k, v] of Object.entries(anim.extra)) {
     if (!['bones', 'slots', 'attachments', 'transform', 'path', 'physics'].includes(k)) out[k] = clone(v);
+  }
+  // Authoring may retain normalized curves on a final constraint key until its successor is
+  // added. Convert them to per-field absolute curves for 4.x exports without changing the source.
+  if (v4) for (const type of ['transform', 'path', 'physics', 'slider']) {
+    for (const value of Object.values(out[type] ?? {})) for (const ch of constraintChannels(type)) {
+      const keys = ch.channel === null ? value : value[ch.channel];
+      if (!Array.isArray(keys)) continue;
+      keys.forEach((key, i) => {
+        if (typeof key.curve !== 'number') return;
+        const preset = { bezier: [key.curve, key.c2 ?? 0, key.c3 ?? 1, key.c4 ?? 1] };
+        setConstraintCurve(keys, i, ch.fields, ch.defaults, preset);
+        delete key.c2; delete key.c3; delete key.c4;
+      });
+    }
   }
   return out;
 }

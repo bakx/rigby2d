@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 addon_info = {
     "name": "Mirror tools",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "author": "Rigby2D",
     "description": "Mirror the selected bones across X = 0, and swap left and right in their names.",
     "rigby": (0, 4, 1),
@@ -30,23 +30,34 @@ def register():
         bones = rigby.selected_bones()
         if not bones:
             raise rigby.RigbyError("Select the bones to mirror first")
-        for b in bones:
-            b.set(x=-b.x, rotation=180 - b.rotation)
-        rigby.status(f"Mirrored {len(bones)} bone(s)")
+        result = rigby.mirror_bones(bones)
+        rigby.status(f"Mirrored {len(result['bones'])} bone(s)")
+
+    @rigby.tool("Duplicate mirrored chains", description="Copy selected chains and artwork across world X = 0")
+    def duplicate_mirror():
+        bones = rigby.selected_bones()
+        if not bones:
+            raise rigby.RigbyError("Select the chain roots first")
+        names = {b.name: swap_side(b.name) if swap_side(b.name) != b.name else b.name + "_mirror" for b in rigby.bones()}
+        result = rigby.mirror_bones(bones, duplicate=True, names=names)
+        rigby.status(f"Duplicated {len(result['bones'])} mirrored bone(s)")
 
     @rigby.tool("Swap left/right in names", description="arm_l <-> arm_r, hand.L <-> hand.R, left <-> right")
     def swap_names():
         bones = rigby.selected_bones() or rigby.bones()
         taken = {b.name for b in rigby.bones()}
-        renamed = 0
-        for b in bones:
-            new = swap_side(b.name)
-            if new != b.name and new not in taken:
-                taken.discard(b.name)
-                b.name = new
-                taken.add(new)
-                renamed += 1
-        rigby.status(f"Renamed {renamed} bone(s)")
+        moving = {b.name for b in bones if swap_side(b.name) != b.name}
+        # Only a collision outside the set being swapped prevents a rename.
+        pairs = [(b, swap_side(b.name)) for b in bones if b.name in moving and (swap_side(b.name) not in taken or swap_side(b.name) in moving)]
+        for i, (b, new) in enumerate(pairs):
+            temp = f"__mirror_swap_{i}"
+            while temp in taken:
+                temp += "_"
+            taken.add(temp)
+            b.name = temp
+        for b, new in pairs:
+            b.name = new
+        rigby.status(f"Renamed {len(pairs)} bone(s)")
 
 
 def unregister():

@@ -26,6 +26,7 @@ const TYPE_CHECKS = {
   boolean: (v) => typeof v === 'boolean',
   object: isObject,
   array: Array.isArray,
+  null: (v) => v === null,
 };
 
 /**
@@ -39,14 +40,25 @@ export function checkArguments(schema, args) {
   const props = schema.properties ?? {};
   for (const name of schema.required ?? []) if (args[name] === undefined) problems.push(`'${name}' is required`);
   for (const [name, value] of Object.entries(args)) {
-    const prop = props[name];
+    const prop = Object.hasOwn(props, name) ? props[name] : null;
     if (!prop) {
       if (schema.additionalProperties === false) problems.push(`unknown argument '${name}'`);
       continue;
     }
-    if (prop.type && !TYPE_CHECKS[prop.type]?.(value)) problems.push(`'${name}' must be of type ${prop.type}`);
+    if (prop.type && !(Array.isArray(prop.type) ? prop.type : [prop.type]).some((t) => TYPE_CHECKS[t]?.(value))) problems.push(`'${name}' must be of type ${prop.type}`);
     else if (prop.enum && !prop.enum.includes(value)) problems.push(`'${name}' must be one of ${prop.enum.join(', ')}`);
     else if (prop.minimum !== undefined && value < prop.minimum) problems.push(`'${name}' must be at least ${prop.minimum}`);
+    else if (prop.maximum !== undefined && value > prop.maximum) problems.push(`'${name}' must be at most ${prop.maximum}`);
+    else if (prop.exclusiveMinimum !== undefined && value <= prop.exclusiveMinimum) problems.push(`'${name}' must be greater than ${prop.exclusiveMinimum}`);
+    else if (prop.anyOf && !prop.anyOf.some((s) => !checkArguments({ properties: { [name]: s } }, { [name]: value }).length)) problems.push(`'${name}' does not match an allowed value`);
+    else if (Array.isArray(value)) {
+      if (prop.minItems !== undefined && value.length < prop.minItems) problems.push(`'${name}' needs at least ${prop.minItems} items`);
+      if (prop.maxItems !== undefined && value.length > prop.maxItems) problems.push(`'${name}' needs at most ${prop.maxItems} items`);
+      if (prop.items) value.forEach((v, i) => problems.push(...checkArguments({ properties: { [`${name}[${i}]`]: prop.items } }, { [`${name}[${i}]`]: v })));
+    } else if (isObject(value)) {
+      if (prop.properties || prop.required || prop.additionalProperties === false) problems.push(...checkArguments(prop, value).map((p) => `${name}: ${p}`));
+      else if (isObject(prop.additionalProperties)) for (const [k, v] of Object.entries(value)) problems.push(...checkArguments({ properties: { [`${name}.${k}`]: prop.additionalProperties } }, { [`${name}.${k}`]: v }));
+    }
   }
   return problems;
 }

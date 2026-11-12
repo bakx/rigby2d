@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 addon_info = {
     "name": "Rig report",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "author": "Rigby2D",
     "description": "Checks the rig before export: empty slots, unused bones, duplicate-looking names and empty animations, listed in the log.",
     "rigby": (0, 4, 1),
@@ -19,6 +19,10 @@ def register():
         anims = rigby.animations()
         issues = []
         used = {s.bone.name for s in slots}
+        for c in rigby.constraints():
+            used.update(b.name for b in c.bones)
+            if c.type != "path" and c.target:
+                used.add(c.target)
         for b in bones:
             if b.name != "root" and not b.children and b.name not in used:
                 issues.append(f"Bone '{b.name}' has no children and no slots")

@@ -15,6 +15,7 @@ import { VISEMES, keyLipSync, matchMouths, readTiming, tidy, timeTextByLoudness,
 import { EDIT, NAME, OUTPUT, OVERWRITE, animationOf, boneIndex, checkName, edit, roundTime, slotIndex } from './edits.js';
 import { ToolError } from './protocol.js';
 import { PATH } from './tools.js';
+import { renameBone } from '../core/authoring.js';
 
 const AUDIO_TYPES = ['.wav', '.mp3', '.ogg', '.m4a', '.aac', '.flac'];
 const TIME = {
@@ -110,6 +111,7 @@ export function createFilmTools(ws) {
     description,
     inputSchema: { type: 'object', properties: { ...base, ...properties }, required: ['path', ...required], additionalProperties: false },
     annotations: EDIT,
+    apply: (doc, args, p) => handler(args, doc, p),
     handler: (args) => edit(ws, args, (doc, p) => handler(args, doc, p)),
   });
 
@@ -430,16 +432,10 @@ export function createFilmTools(ws) {
       { bone: NAME('Bone'), name: NAME('New') },
       ['bone', 'name'],
       (args, doc) => {
-        const bone = doc.bones[boneIndex(doc, args.bone)];
+        boneIndex(doc, args.bone);
         checkName(args.name, 'bone');
         if (doc.bones.some((b) => b.name === args.name)) throw new ToolError(`A bone named '${args.name}' already exists.`);
-        bone.name = args.name;
-        for (const pose of doc.poses ?? []) {
-          if (args.bone in pose.bones) {
-            pose.bones[args.name] = pose.bones[args.bone];
-            delete pose.bones[args.bone];
-          }
-        }
+        renameBone(doc, args.bone, args.name); // also renames constraint references and poses
         return { renamed: args.bone, to: args.name };
       },
     ),

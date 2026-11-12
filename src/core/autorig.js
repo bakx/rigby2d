@@ -198,8 +198,17 @@ export function autoRig(doc, alphaOf, options = {}) {
   const tips = [[0, 0]];
   /** part -> bones it is weighted to (first one owns the slot). */
   const owners = new Map();
+  // Core hints are world points; PSD callers convert from top-left canvas pixels.
+  const hints = options.joints ?? {};
+  const usedHints = new Set();
+  for (const [name, p] of Object.entries(hints)) if (!Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite)) throw new Error(`Joint '${name}' must be [x, y].`);
+  const jointName = (base) => base.replace(/^upperarm/, 'shoulder').replace(/^forearm/, 'elbow').replace(/^hand/, 'wrist').replace(/^thigh/, 'hip').replace(/^shin/, 'knee').replace(/^foot/, 'ankle');
+  const tipName = (base) => base.replace(/^upperarm/, 'elbow').replace(/^forearm/, 'wrist').replace(/^thigh/, 'knee').replace(/^shin/, 'ankle');
+  const hinted = (name, fallback) => { if (Object.hasOwn(hints, name)) { usedHints.add(name); return hints[name]; } return fallback; };
 
   const bone = (base, parent, head, tip) => {
+    head = hinted(base, hinted(jointName(base), head));
+    if (tipName(base) !== base) tip = hinted(tipName(base), tip);
     const length = dist(head, tip);
     const angle = length > 1e-6 ? angleOf(sub(tip, head)) : 0;
     const pw = frames[parent];
@@ -445,7 +454,9 @@ export function autoRig(doc, alphaOf, options = {}) {
   if (unknown.length) warnings.push(`Not identified, attached to the nearest bone: ${unknown.join(', ')}. Rename the layers (e.g. "arm_l", "head") or set their roles to rig them.`);
   const err = doc.validate();
   if (err) throw new Error(`AutoRig made an invalid rig: ${err}`);
-  return { parts: report, bones: doc.bones.slice(1).map((b) => b.name), ik: iks, warnings };
+  const unused = Object.keys(hints).filter((n) => !usedHints.has(n));
+  if (unused.length) throw new Error(`Joint hints do not match any rigged joint: ${unused.join(', ')}.`);
+  return { parts: report, bones: doc.bones.slice(1).map((b) => b.name), ik: iks, warnings, ...(usedHints.size ? { joints: [...usedHints] } : {}) };
 }
 
 function segmentDistance(p, a, b) {

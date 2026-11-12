@@ -8,6 +8,7 @@ import { Animation, CHANNELS, setKey } from '../../core/animation.js';
 import { EASE_IN, EASE_IN_OUT, EASE_OUT, LINEAR, STEPPED, isBezier } from '../../core/curve.js';
 import { makeBone } from '../../core/model.js';
 import { transform } from '../../core/math.js';
+import * as author from '../../core/authoring.js';
 
 const CURVES = { linear: LINEAR, stepped: STEPPED, ease_in: EASE_IN, ease_out: EASE_OUT, ease_in_out: EASE_IN_OUT };
 const SETUP_FIELDS = ['x', 'y', 'rotation', 'scale_x', 'scale_y', 'shear_x', 'shear_y'];
@@ -107,7 +108,7 @@ export const API = {
       else if (k === 'name') {
         checkName(v, 'bone');
         if (v !== bone.name && app.doc.bones.some((b) => b.name === v)) fail(`A bone named '${v}' already exists`);
-        bone.name = v;
+        author.renameBone(app.doc, bone.name, v);
       } else fail(`Bones have no field '${k}'`);
     }
     return boneInfo(app.doc, bone);
@@ -162,10 +163,10 @@ export const API = {
    * Sets a bone key (replacing one at the same time). Values are relative to the setup pose, as in
    * the editor: rotate adds degrees, translate and shear add [x, y], scale multiplies by [x, y].
    */
-  set_key(app, { animation = null, bone, channel, time = null, value, curve = 'linear' }) {
+  set_key(app, { animation = null, bone, channel, time = null, value, curve = 'linear', space = 'local' }) {
     const anim = animationOf(app, animation);
     const b = boneIndex(app.doc, bone);
-    const v = keyValue(channel, value);
+    const v = space === 'world' ? author.worldKeyValue(app.doc, anim, b, channel, time ?? app.time, channel === 'rotate' ? { value } : { x: value[0], y: value[1] }) : keyValue(channel, value);
     if (!(curve in CURVES)) fail(`Unknown curve '${curve}'; use one of ${Object.keys(CURVES).join(', ')}`);
     const t = Math.round(Math.max(0, checkNumber(time ?? app.time, 'time')) * 1e6) / 1e6;
     const keys = anim.boneTimelineMut(b)[channel];
@@ -225,6 +226,34 @@ export const API = {
     app.mode = mode;
     return mode;
   },
+
+  constraints: (app) => author.constraintInfo(app.doc),
+  add_constraint: (app, args) => author.createConstraint(app.doc, args),
+  set_constraint: (app, args) => author.changeConstraint(app.doc, args),
+  delete_constraint: (app, args) => author.deleteConstraint(app.doc, args),
+  key_constraint: (app, args) => author.keyConstraint(app.doc, { ...args, animation: animationOf(app, args.animation).name, time: args.time ?? app.time }),
+  skins: (app) => app.doc.skins.map((s) => ({ name: s.name, slots: s.slots.map((e) => ({ slot: app.doc.slots[e.slot].name, attachments: e.attachments.map((a) => a.name) })) })),
+  add_skin: (app, args) => author.addSkin(app.doc, args),
+  delete_skin: (app, args) => author.deleteSkin(app.doc, args),
+  set_skin_attachment: (app, args) => author.setSkinAttachment(app.doc, args),
+  add_attachment: (app, args) => author.addAttachment(app.doc, args),
+  mesh: (app, args) => structuredClone(author.attachmentOf(app.doc, args).att),
+  make_mesh: (app, args) => author.makeMesh(app.doc, args, args.alpha),
+  auto_weight: (app, args) => author.weightMesh(app.doc, args),
+  set_weights: (app, args) => author.setWeights(app.doc, args),
+  smooth_weights: (app, args) => author.smoothWeights(app.doc, args),
+  add_event: (app, args) => author.addEvent(app.doc, args),
+  events: (app) => structuredClone(app.doc.events),
+  key_event(app, { animation, event, time, ...values }) {
+    const anim = animationOf(app, animation);
+    author.indexOf(app.doc.events, event, 'event');
+    author.number(time, 'time', 0);
+    anim.events = anim.events.filter((k) => k.name !== event || Math.abs(k.time - time) >= SAME_TIME);
+    anim.events.push({ name: event, time, ...values });
+    anim.events.sort((a, b) => a.time - b.time);
+    anim.duration = Math.max(anim.duration, time);
+  },
+  mirror_bones: (app, args) => author.mirrorBones(app.doc, args),
 };
 
 /**

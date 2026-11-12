@@ -1,0 +1,32 @@
+# Rigby2D
+
+> Open-source 2D skeletal animation for games and film. File-based MCP tools and sandboxed Python scripting share the editor runtime.
+
+## Start here
+
+- [Automation guide](https://github.com/jaisurya-dev-art/rigby2d/blob/develop/AGENTS.md): coordinate conventions, route capabilities, defaults, recommended workflow and limits.
+- [MCP setup](https://rigby2d.com/docs/mcp.html)
+- [Generated tool reference](https://rigby2d.com/docs/mcp-tools.html)
+- [Python scripting](https://rigby2d.com/docs/scripting.html)
+
+## Conventions
+
+World Y up; counter-clockwise degrees; seconds. Setup transforms are parent-local. Bone rotation/translation/shear keys add to setup; scale keys multiply. set_bone_key with space: world accepts absolute translation/rotation in the evaluated pose. AutoRig l means the character's left (image right). MCP joint hints are top-left canvas pixels; the core autoRig function takes world points.
+
+Files must be inside configured workspace roots. A .rigby is a ZIP with project.json and images/*.png, plus optional audio/actors. Editing tools save atomically, in place or to output. batch_edit applies bone, slot, key, constraint, attachment, skin, mesh, pose and face-control edits in one transaction. Do not edit the archive manually.
+
+## Workflow and tools
+
+PSD -> detect_parts -> autorig -> describe_rig -> batch_edit -> render_preview -> inspect image -> validate_project/lint_animations. Supply joints, <PSD basename>.joints.json, or PSD layers named joint:<name> / @<name> (centre = joint, not imported as art) when pivots are known. Use update_art to re-import changed layers while keeping bones, constraints, skins and clips. images replaces matching art; add_missing also creates slots for unmatched layers.
+
+Constraints: add_constraint, set_constraint, delete_constraint, set_constraint_key support IK, transform, path, physics and slider. Physics is per bone; a chain returns several constraint names. Motion weights x/y/rotate/scaleX/shearX default to 0: set rotate: 1 for hair. Other defaults: inertia .5, strength 100, damping .85, mass 1, wind/gravity 0, limit 5000, fps 60, mix 1. Global flags opt into global physics keys.
+
+Art/skins: add_attachment and replace_image accept PNG/WebP; add_skin, set_skin_attachment and delete_skin edit skins. Skins override attachment keys and fall back to the default skin. A slot shows one attachment at a time. make_mesh supports outline/grid; auto_weight, set_weights and smooth_weights edit bindings. merge_parts joins rigid pieces (upper arm + forearm) into one grid mesh weighted to both bones, hiding the sources, so a joint bends without a corner. Changed binding layouts may remove incompatible deform timelines, reported by the tools.
+
+Coordinates: set_ik_target_key keys a target directly at a world point; world_to_local is read only. Constraints can override ordinary bone keys; animate the target or constraint mix instead.
+
+Preview: render_preview returns one PNG strip/grid or GIF path, with optional labels and bone/pivot/IK overlays. render_video outputs WebM/MP4 for character clips with framing, camera zoom and audio. Video and WebP import require FFmpeg on PATH. Scene video remains in the editor. bake_physics samples motion into keys and optionally disables those constraints in the clip; mixed constraint families on the same bone and key reduction are not supported.
+
+Python: rigby exposes bones, slots, animations, constraints, skins, meshes and events. Add-ons use the same API. Images must already be in the project; use MCP/editor for file imports. Grid meshing works directly; outline meshing takes explicit alpha data. Scripts have standard-library access but no network or host filesystem access.
+
+Lint warnings are advisory: loop seams, frame jumps, hidden/missing attachments, pinned IK targets and overridden keys. Loop checks infer idle/breathe/walk/run/loop names or take an explicit loop flag. Sample and render to verify.

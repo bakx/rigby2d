@@ -152,12 +152,50 @@ def breathing():
     rigby.status(f"Breathing keyed on {anim.name}")
 ```
 
+## Constraints, skins, meshes and events
+
+Scripts and add-ons can author constraints with the same implementation as MCP:
+
+```python
+import rigby
+for bone in rigby.bones():
+    if bone.name.startswith("hair_"):
+        rigby.add_constraint("physics", bone.name + "_physics", [bone], rotate=1, damping=0.7)
+
+anim = rigby.animation("wave")
+anim.key_constraint("ik_hand_l", 0, mix=0)
+skin = rigby.add_skin("outfit")
+skin.set_attachment("body", "body", image="kimono")  # existing imported image
+mesh = rigby.slot("arm").make_mesh("arm", mode="grid", spacing=20)
+mesh.auto_weight(["upperarm_l", "forearm_l"])
+mesh.smooth_weights(iterations=2)
+rigby.add_event("step", int=1)
+anim.key_event("step", 0.5)
+```
+
+`rigby.constraints()` returns objects with `name`, `type`, `bones`, `target`, `settings`,
+`set(**settings)` and `delete()`. `rigby.skins()` returns skins with `slots`,
+`set_attachment(slot, attachment, image=None)` and `delete()`. `Slot.add_attachment` uses an
+existing project image and takes `x`, `y`, `rotation`, `skin`, and `space` (`local` or `world`).
+
+`Mesh.data`, `.vertices`, `.triangles` and `.weights` expose mesh data. `set_weights(vertices,
+weights)` accepts vertex indices and one list of `{bone: name, weight: number}` per vertex.
+Outline meshing accepts `alpha={width, height, data}`; grid meshing requires no pixel data.
+Weight-layout changes report any incompatible deform timelines removed.
+
+`Bone.key` and `Animation.key` accept `space="world"` for absolute translate/rotate keys.
+`rigby.mirror_bones(bones, duplicate=False, names=None)` reflects whole chains across world X=0;
+duplication includes their slot and skin artwork.
+
+See the repository [automation guide](https://github.com/jaisurya-dev-art/rigby2d/blob/develop/AGENTS.md)
+for defaults and the complete route comparison.
+
 ## Limits
 
 - Scripts can use the Python standard library. Packages from PyPI are not available yet.
 - Tools take no arguments. Read the selection or the current time to decide what to act on.
-- Scripts edit bones, slots, animations and bone keys. Meshes, constraints, skins and events are
-  not in the API yet.
+- Scripts can edit bones, slots, animations, constraints, meshes, skins and events. New image
+  files must be imported through MCP or the editor; scripts refer to their project image names.
 - The editor keeps working while a script runs. If a script never finishes, *Scripts ▸ Stop the
   running script* stops it; Python restarts with your library and add-ons.
 - Edits you make in the editor while a script runs are replaced by the script's result.

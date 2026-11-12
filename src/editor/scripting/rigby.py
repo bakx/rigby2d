@@ -103,7 +103,7 @@ class Bone:
         """World transform in the pose shown: dict with x, y, rotation, scale_x, scale_y."""
         return _call("world", name=self._name)
 
-    def key(self, channel, value, time=None, animation=None, curve="linear"):
+    def key(self, channel, value, time=None, animation=None, curve="linear", space="local"):
         """Keys a channel ('rotate', 'translate', 'scale', 'shear') at `time` (default: current time).
 
         Values are relative to the setup pose: rotate adds degrees; translate and shear add (x, y);
@@ -111,7 +111,7 @@ class Bone:
         """
         if channel != "rotate":
             value = [float(value[0]), float(value[1])]
-        return _call("set_key", animation=animation, bone=self._name, channel=channel, time=time, value=value, curve=curve)
+        return _call("set_key", animation=animation, bone=self._name, channel=channel, time=time, value=value, curve=curve, space=space)
 
     def delete_key(self, channel, time=None, animation=None):
         return _call("delete_key", animation=animation, bone=self._name, channel=channel, time=time)
@@ -173,6 +173,22 @@ class Slot:
     def __repr__(self):
         return f"Slot({self._name!r})"
 
+    def add_attachment(self, name, image, x=0, y=0, rotation=0, skin=None, space="local"):
+        """Add a region using an image already imported into the project."""
+        return _call("add_attachment", slot=self.name, name=name, image=image, x=x, y=y, rotation=rotation, skin=_name(skin), space=space)
+
+    def make_mesh(self, attachment, mode="grid", spacing=None, skin=None, alpha=None):
+        args = dict(slot=self.name, attachment=attachment, mode=mode, skin=_name(skin))
+        if spacing is not None:
+            args["spacing"] = spacing
+        if alpha is not None:
+            args["alpha"] = alpha
+        _call("make_mesh", **args)
+        return Mesh(self.name, attachment, _name(skin))
+
+    def mesh(self, attachment, skin=None):
+        return Mesh(self.name, attachment, _name(skin))
+
 
 class Animation:
     def __init__(self, name):
@@ -193,9 +209,15 @@ class Animation:
     def duration(self, seconds):
         _call("set_duration", animation=self._name, duration=seconds)
 
-    def key(self, bone, channel, time, value, curve="linear"):
+    def key(self, bone, channel, time, value, curve="linear", space="local"):
         b = bone.name if isinstance(bone, Bone) else bone
-        return Bone(b).key(channel, value, time=time, animation=self._name, curve=curve)
+        return Bone(b).key(channel, value, time=time, animation=self._name, curve=curve, space=space)
+
+    def key_constraint(self, constraint, time, values=None, curve="linear", **fields):
+        return _call("key_constraint", animation=self.name, constraint=_name(constraint), time=time, values={**(values or {}), **fields}, curve=curve)
+
+    def key_event(self, event, time, **values):
+        return _call("key_event", animation=self.name, event=_name(event), time=time, **values)
 
     def open(self):
         """Shows this animation in the editor."""
@@ -288,8 +310,128 @@ def fps():
     return info()["fps"]
 
 
-# ---- output -------------------------------------------------------------------------------------
+# ---- constraints, skins, meshes and events ------------------------------------------------------
 
+def _name(value):
+    return getattr(value, "name", value)
+
+
+class Constraint:
+    def __init__(self, name):
+        self.name = name
+
+    def _data(self):
+        for c in _call("constraints"):
+            if c["name"] == self.name:
+                return c
+        raise RigbyError(f"No constraint '{self.name}'")
+
+    @property
+    def type(self):
+        return self._data()["type"]
+
+    @property
+    def bones(self):
+        return [Bone(n) for n in self._data()["bones"]]
+
+    @property
+    def target(self):
+        return self._data()["target"]
+
+    @property
+    def settings(self):
+        return self._data()["settings"]
+
+    def set(self, **settings):
+        _call("set_constraint", name=self.name, settings=settings)
+        return self
+
+    def delete(self):
+        return _call("delete_constraint", name=self.name)
+
+
+def constraints():
+    return [Constraint(c["name"]) for c in _call("constraints")]
+
+
+def add_constraint(type, name, bones=(), target=None, settings=None, **fields):
+    result = _call("add_constraint", type=type, name=name, bones=[_name(b) for b in bones], target=_name(target), settings={**(settings or {}), **fields})
+    made = [Constraint(n) for n in result["added"]]
+    return made[0] if len(made) == 1 else made
+
+
+class Skin:
+    def __init__(self, name):
+        self.name = name
+
+    @property
+    def slots(self):
+        return next(s["slots"] for s in _call("skins") if s["name"] == self.name)
+
+    def set_attachment(self, slot, attachment, image=None):
+        return _call("set_skin_attachment", skin=self.name, slot=_name(slot), attachment=attachment, image=image)
+
+    def delete(self):
+        return _call("delete_skin", name=self.name)
+
+
+def skins():
+    return [Skin(s["name"]) for s in _call("skins")]
+
+
+def add_skin(name):
+    _call("add_skin", name=name)
+    return Skin(name)
+
+
+class Mesh:
+    def __init__(self, slot, attachment, skin=None):
+        self._args = dict(slot=slot, attachment=attachment, skin=skin)
+
+    @property
+    def data(self):
+        return _call("mesh", **self._args)
+
+    @property
+    def vertices(self):
+        return self.data.get("vertices", [])
+
+    @property
+    def triangles(self):
+        return self.data["triangles"]
+
+    @property
+    def weights(self):
+        return self.data.get("weights", [])
+
+    def auto_weight(self, bones, falloff=4):
+        return _call("auto_weight", **self._args, bones=[_name(b) for b in bones], falloff=falloff)
+
+    def set_weights(self, vertices, weights):
+        return _call("set_weights", **self._args, vertices=vertices, weights=weights)
+
+    def smooth_weights(self, iterations=1):
+        return _call("smooth_weights", **self._args, iterations=iterations)
+
+
+def events():
+    return _call("events")
+
+
+def add_event(name, **defaults):
+    _call("add_event", name=name, **defaults)
+    return name
+
+
+def mirror_bones(bones, duplicate=False, names=None):
+    """Reflect complete setup chains across world X=0, optionally copying their artwork."""
+    return _call("mirror_bones", bones=[_name(b) for b in bones], duplicate=duplicate, names=names or {})
+
+
+__all__ += ["Constraint", "Skin", "Mesh", "constraints", "add_constraint", "skins", "add_skin", "events", "add_event", "mirror_bones"]
+
+
+# ---- output -------------------------------------------------------------------------------------
 
 def _text(args):
     return " ".join(str(a) for a in args)

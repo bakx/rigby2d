@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 addon_info = {
     "name": "Breathing idle",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "author": "Rigby2D",
     "description": "Makes a looping 'breathe' animation: the upper body rises and settles, the head and arms follow a beat later.",
     "rigby": (0, 4, 1),
@@ -67,7 +67,7 @@ def _breath(anim, bone, channel, peak, lag=0.0):
 
 def register():
     @rigby.tool("Make a breathing idle", description="The upper body breathes (selected bones, or the chest, spine or torso)")
-    def breathe():
+    def breathe(weight_shift=False):
         bones = [b for b in rigby.bones() if not _match(b, SKIP)]
         torso = rigby.selected_bones() or [b for b in bones if _match(b, TORSO)]
         if not torso:
@@ -78,6 +78,9 @@ def register():
         heads = [b for b in bones if _match(b, HEAD) and b.name not in names]
         upper = [b for b in bones if _match(b, UPPER_ARM) and not _match(b, LOWER_ARM) and b.name not in names]
         lower = [b for b in bones if _match(b, LOWER_ARM) and b.name not in names]
+        arm_names = {b.name for b in upper + lower}
+        arm_ik = [c for c in rigby.constraints() if c.type == "ik" and c.settings.get("mix", 1) > 0 and any(b.name in arm_names for b in c.bones)]
+        driven = {b.name for c in arm_ik for b in c.bones}
 
         height = _height()
         rise = min(max(height * 0.012, 1.0), 12.0) if height else 3.0
@@ -97,11 +100,46 @@ def register():
         for b in heads:
             _breath(anim, b, "rotate", 1.2 / max(len(heads), 1), LAG)
         for b in upper:
-            _breath(anim, b, "rotate", 0.8, LAG)
+            if b.name not in driven:
+                _breath(anim, b, "rotate", 0.8 * (1 if b.world["x"] >= 0 else -1), LAG)
         for b in lower:
-            _breath(anim, b, "rotate", 0.6, LAG * 1.6)
+            if b.name not in driven:
+                _breath(anim, b, "rotate", 0.6 * (1 if b.world["x"] >= 0 else -1), LAG * 1.6)
+        for c in arm_ik:
+            target = rigby.bone(c.target)
+            _breath(anim, target, "translate", _up_in_parent(target, rise * 0.8), LAG)
+        if weight_shift:
+            # Three breath cycles over 9.3 seconds, plus a slower lateral sway. Both close at
+            # the boundary, so the longer idle has variation without a loop seam.
+            length = 9.3
+            targets = [rigby.bone(c.target) for c in arm_ik]
+            for b in torso + heads + upper + lower + targets:
+                for channel in ("rotate", "translate"):
+                    original = b.keys(channel, animation=anim.name)
+                    for k in original:
+                        b.delete_key(channel, time=k["time"], animation=anim.name)
+                    for cycle in range(3):
+                        for k in original:
+                            t = (cycle + k["time"] / LENGTH) * length / 3
+                            anim.key(b, channel, t, k["value"], "ease_in_out")
+            # Add the shift to the torso's existing lift, never overwrite its breath curve.
+            for b in lift + targets:
+                keys = b.keys("translate", animation=anim.name)
+                parent = b.parent
+                angle = math.radians(parent.world["rotation"]) if parent else 0
+                sx = parent.world["scale_x"] if parent else 1
+                sy = parent.world["scale_y"] if parent else 1
+                for k in keys:
+                    sway = rise * 0.6 * math.sin(2 * math.pi * k["time"] / length)
+                    value = (k["value"][0] + sway * math.cos(angle) / (sx or 1), k["value"][1] - sway * math.sin(angle) / (sy or 1))
+                    anim.key(b, "translate", k["time"], value, "ease_in_out")
+            anim.duration = length
         anim.open()
         rigby.status(f"Made '{name}': {len(torso)} breathing bone(s), {len(heads) + len(upper) + len(lower)} following")
+
+    @rigby.tool("Make a breathing idle with weight shift", description="A longer 9.3-second idle with three breaths and a slow sway")
+    def breathe_with_shift():
+        breathe(weight_shift=True)
 
 
 def unregister():

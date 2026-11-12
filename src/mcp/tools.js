@@ -20,6 +20,10 @@ import { filmSummary } from './film.js';
 import { sceneSummary } from './scene.js';
 import { decodePng, encodePng } from './png.js';
 import { ToolError } from './protocol.js';
+import { constraintInfo } from '../core/authoring.js';
+import { worldToLocalTool } from './authoring.js';
+import { lintAnimations } from '../core/automation.js';
+import { createRenderingTools } from './rendering.js';
 
 const JSON_VERSIONS = ['3.8', '4.2', '4.3'];
 const round = (v, digits = 4) => (Number.isFinite(v) ? Math.round(v * 10 ** digits) / 10 ** digits : v);
@@ -222,6 +226,7 @@ function summary(p) {
 
 function rig(doc) {
   return {
+    constraints: constraintInfo(doc),
     bones: doc.bones.map((b) => ({
       name: b.name,
       parent: b.parent === null ? null : doc.bones[b.parent].name,
@@ -409,6 +414,7 @@ function validate(p) {
     file: p.file,
     format: p.format,
     valid: errors.length === 0,
+    animationWarnings: lintAnimations(doc),
     errors,
     warnings,
     checks: { structure: structure ? 'failed' : 'ok', images: p.images ? (missingImages.length ? 'missing' : 'ok') : 'not checked', jsonRoundTrip: roundTrip, binaryExport },
@@ -517,7 +523,7 @@ async function defoldModel(ws, { input, output_folder, name, folder, animation =
 // ---- sprite sheets ----------------------------------------------------------------------------
 
 /** Image lookup for a loaded project: the work file's images, or the export's atlas or images folder. */
-async function rasterLookup(p) {
+export async function rasterLookup(p) {
   const decode = (bytes, pma = false) => ({ ...decodePng(bytes), pma });
   if (p.format === 'rigby') {
     const textures = new Map();
@@ -550,7 +556,7 @@ async function exportSpriteSheet(ws, args) {
   const p = await loadProject(source);
   if (p.doc.scene) throw new ToolError('Sprite sheets are made from a character, not a scene: pass the character file.');
   const name = (args.name ?? path.basename(source, path.extname(source))).replace(/[\\/:*?"<>|\s]+/g, '_');
-  if (args.skin) {
+  if (args.skin && args.skin !== 'default') {
     if (!p.doc.skins.some((k) => k.name === args.skin)) throw new ToolError(`No skin '${args.skin}'. Skins: ${p.doc.skins.map((k) => k.name).join(', ') || 'none'}.`);
     p.doc.skin = args.skin;
   }
@@ -600,6 +606,8 @@ export const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempoten
 export function createTools(ws) {
   const load = async (p) => loadProject(await ws.existing(p));
   return [
+    worldToLocalTool(ws),
+    ...createRenderingTools(ws),
     {
       name: 'inspect_project',
       title: 'Inspect project',

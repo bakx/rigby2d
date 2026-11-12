@@ -590,7 +590,7 @@ function deformLength(att) {
 }
 
 /** The local transform that gives world transform `world` under `parent` and inherit `mode`. */
-function localFromWorld(parent, world, mode) {
+export function localFromWorld(parent, world, mode) {
   if (!parent) return world.decompose();
   // Translation always goes through the full parent transform; the linear part through the part
   // of the parent the inherit mode keeps.

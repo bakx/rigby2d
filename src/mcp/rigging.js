@@ -7,7 +7,8 @@ import path from 'node:path';
 
 import { PART_ROLES, autoRig, findParts } from '../core/autorig.js';
 import { makeAttachment, makeSlot, Skeleton, uniqueName } from '../core/model.js';
-import { transform } from '../core/math.js';
+import { transform, toAffine } from '../core/math.js';
+import { Pose } from '../core/pose.js';
 import { mapBones, retarget } from '../core/retarget.js';
 import { EDIT, OUTPUT, OVERWRITE, edit, save } from './edits.js';
 import { alphaOf as alphaChannel, decodePng, encodePng } from './png.js';
@@ -18,6 +19,7 @@ const PSD = { type: 'string', description: 'Layered artwork (.psd) inside the wo
 const ROLES = { type: 'object', additionalProperties: { type: 'string', enum: [...PART_ROLES, 'none'] }, description: "Override detected roles: { layerName: role }. 'none' leaves a layer unrigged." };
 const SIDES = { type: 'object', additionalProperties: { type: ['string', 'null'], enum: ['l', 'r', null] }, description: "Override sides: { layerName: 'l' | 'r' }. The character's left (l) is on the image's right when it faces the viewer." };
 const MAPPING = { type: 'object', additionalProperties: { type: ['string', 'null'] }, description: 'Override bone matches: { sourceBone: targetBone }, or null to leave a source bone out.' };
+const JOINTS = { type: 'object', additionalProperties: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }, description: 'Joint positions in PSD canvas pixels, origin top left: shoulder_l, elbow_l, wrist_l, hip_l, knee_l, ankle_l, or bone names. Also reads PSD layers named joint:<name> or @<name> (their centre), and <PSD basename>.joints.json; arguments win.' };
 
 /** Pixel layers of a PSD, bottom-most first (the draw order), with their hidden state. */
 function pixelLayers(children, parentHidden = false, out = []) {
@@ -57,11 +59,19 @@ export async function importPsd(file) {
     throw new ToolError(`Cannot read the PSD: ${e.message}`);
   }
   const doc = new Skeleton();
+  doc.extra.rigbyArt = { width: psd.width, height: psd.height };
   doc.name = path.basename(file, path.extname(file));
   const entries = new Map();
   const pixels = new Map();
   for (const { layer, hidden } of pixelLayers(psd.children)) {
     const src = layer.imageData;
+    // Artist joint hints: a layer named "joint:shoulder_l" or "@shoulder_l" marks a joint at its centre.
+    const hint = /^\s*(?:joint\s*:|@)\s*(\S.*?)\s*$/i.exec(layer.name ?? '');
+    if (hint) {
+      doc.extra.rigbyArt.joints ??= {};
+      doc.extra.rigbyArt.joints[hint[1]] = [(layer.left ?? 0) + src.width / 2, (layer.top ?? 0) + src.height / 2];
+      continue;
+    }
     const left = layer.left ?? 0;
     const top = layer.top ?? 0;
     const l = Math.max(0, left);
@@ -120,11 +130,32 @@ async function artwork(ws, args) {
   if ((args.path === undefined) === (args.psd_file === undefined)) throw new ToolError("Give either 'path' (a .rigby work file) or 'psd_file'.");
   if (args.psd_file) {
     const { doc, entries } = await importPsd(await ws.existing(args.psd_file));
-    return { doc, entries, alphaOf: alphaFromEntries(entries) };
+    return { doc, entries, alphaOf: alphaFromEntries(entries), joints: await jointHints(ws, doc, args) };
   }
   const p = await loadProject(await ws.existing(args.path));
   if (p.format !== 'rigby') throw new ToolError('AutoRig needs artwork with its images: a .rigby work file, or a PSD (psd_file).');
-  return { doc: p.doc, entries: p.entries, alphaOf: alphaFromEntries(p.entries), project: p };
+  return { doc: p.doc, entries: p.entries, alphaOf: alphaFromEntries(p.entries), project: p, joints: await jointHints(ws, p.doc, args) };
+}
+
+/** Joint hints in canvas pixels: PSD joint layers, then <PSD basename>.joints.json, then arguments. */
+async function jointHints(ws, doc, args) {
+  let hints = { ...doc.extra.rigbyArt?.joints };
+  if (args.psd_file) {
+    const source = await ws.existing(args.psd_file);
+    const sidecar = source.slice(0, -path.extname(source).length) + '.joints.json';
+    if (await fs.stat(sidecar).then(() => true, () => false)) {
+      const json = JSON.parse(await fs.readFile(await ws.existing(sidecar), 'utf8'));
+      hints = { ...hints, ...(json.joints ?? json) };
+    }
+  }
+  hints = { ...hints, ...args.joints };
+  if (!Object.keys(hints).length) return {};
+  const canvas = doc.extra.rigbyArt;
+  if (!canvas) throw new ToolError('Canvas-pixel joint hints need a PSD import with canvas dimensions; use psd_file.');
+  return Object.fromEntries(Object.entries(hints).map(([name, point]) => {
+    if (!Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite)) throw new ToolError(`Joint '${name}' must be [x, y].`);
+    return [name, [point[0] - canvas.width / 2, canvas.height - point[1]]];
+  }));
 }
 
 const partSummary = (p) => ({
@@ -141,6 +172,66 @@ function wrapError(e) {
   return new ToolError(e.message);
 }
 
+function updateArt(doc, project, art, mode) {
+  if (project.format !== 'rigby') throw new ToolError('update_art needs a .rigby work file.');
+  const pose = new Pose(doc);
+  const layers = new Map(art.doc.slots.map((s) => [s.name, s.attachments[0]]));
+  const matched = new Set(), slotsMatched = new Set(), changed = [];
+  const lists = doc.slots.map((s, slot) => ({ slot, attachments: s.attachments }));
+  for (const skin of doc.skins) lists.push(...skin.slots);
+  const imported = new Map();
+  const imageFor = (layer) => {
+    if (imported.has(layer.image)) return imported.get(layer.image);
+    // A fresh image name avoids changing an unrelated skin that shares the old image.
+    const name = uniqueName(layer.image, (n) => doc.images.some((i) => i.name === n));
+    doc.images.push({ name, path: null, width: layer.width, height: layer.height });
+    project.entries.set(`images/${name}.png`, art.entries.get(`images/${layer.image}.png`));
+    imported.set(layer.image, name);
+    return name;
+  };
+  for (const { slot: si, attachments } of lists) {
+    const slot = doc.slots[si];
+    for (const att of attachments) {
+      const key = [att.name, att.image, ...(attachments.length === 1 ? [slot.name] : [])].find((n) => layers.has(n));
+      if (!key) continue;
+      const layer = layers.get(key);
+      if (!['region', 'mesh'].includes(att.type)) continue;
+      matched.add(key); slotsMatched.add(si);
+      if (att.type === 'region') {
+        att.offset = pose.world[slot.bone].inverse().mul(toAffine(layer.offset)).decompose();
+      } else {
+        const imageWorld = toAffine(layer.offset);
+        const points = Array.from({ length: att.uvs.length / 2 }, (_, i) => imageWorld.apply([(att.uvs[2 * i] - 0.5) * layer.width, (0.5 - att.uvs[2 * i + 1]) * layer.height]));
+        if (att.weights) att.weights.forEach((list, i) => list.forEach((w) => { [w.x, w.y] = pose.world[w.bone].inverse().apply(points[i]); }));
+        else att.vertices = points.flatMap((p) => pose.world[slot.bone].inverse().apply(p));
+      }
+      att.width = layer.width; att.height = layer.height; att.image = imageFor(layer);
+      changed.push({ slot: slot.name, attachment: att.name, layer: key });
+    }
+  }
+  const unmatchedLayers = [...layers.keys()].filter((n) => !matched.has(n));
+  const slotsWithoutLayer = doc.slots.filter((_, i) => !slotsMatched.has(i)).map((s) => s.name);
+  const added = [];
+  if (mode === 'add_missing' && unmatchedLayers.length) {
+    const fresh = art.doc.clone();
+    autoRig(fresh, alphaFromEntries(art.entries), { meshes: 'none' });
+    for (const name of unmatchedLayers) {
+      const layer = layers.get(name);
+      let bi = fresh.slots.find((s) => s.name === name).bone;
+      while (bi !== null && doc.boneIndex(fresh.bones[bi].name) === null) bi = fresh.bones[bi].parent;
+      const parent = bi === null ? 0 : doc.boneIndex(fresh.bones[bi].name);
+      const copy = structuredClone(layer);
+      copy.image = imageFor(layer);
+      copy.offset = pose.world[parent].inverse().mul(toAffine(layer.offset)).decompose();
+      const slot = makeSlot(doc.uniqueSlotName(name), parent, copy);
+      if (art.doc.slots.find((s) => s.name === name).attachment === null) slot.attachment = null;
+      doc.slots.push(slot); added.push(slot.name);
+    }
+  }
+  doc.extra.rigbyArt = { ...art.doc.extra.rigbyArt };
+  return { matched: changed, added, unmatchedLayers, slotsWithoutLayer };
+}
+
 export function createRiggingTools(ws) {
   return [
     {
@@ -148,17 +239,18 @@ export function createRiggingTools(ws) {
       title: 'Detect body parts',
       description:
         "Preview Rigby AutoRig on layered artwork: which body part each layer is (head, torso, upperarm, forearm, hand, arm, thigh, shin, foot, leg, eye, mouth, hair, tail, ...), its side and whether that came from the layer name or its position. Nothing is saved. Use the roles and sides arguments of autorig to correct it.",
-      inputSchema: { type: 'object', properties: { path: PATH, psd_file: PSD, roles: ROLES, sides: SIDES }, additionalProperties: false },
+      inputSchema: { type: 'object', properties: { path: PATH, psd_file: PSD, roles: ROLES, sides: SIDES, joints: JOINTS }, additionalProperties: false },
       annotations: READ_ONLY,
       handler: async (args) => {
-        const { doc, alphaOf } = await artwork(ws, args);
+        const { doc, alphaOf, joints } = await artwork(ws, args);
         let parts;
         try {
           parts = findParts(doc, alphaOf, args);
         } catch (e) {
           throw wrapError(e);
         }
-        return { parts: parts.map(partSummary), unidentified: parts.filter((p) => !p.from || p.role === 'extra').map((p) => p.name) };
+        const preview = Object.keys(joints).length ? autoRig(doc.clone(), alphaOf, { ...args, joints, meshes: 'none' }) : null;
+        return { parts: parts.map(partSummary), unidentified: parts.filter((p) => !p.from || p.role === 'extra').map((p) => p.name), ...(preview ? { joints, hinted: preview.joints } : {}) };
       },
     },
     {
@@ -175,6 +267,7 @@ export function createRiggingTools(ws) {
           ik: { type: 'boolean', description: 'IK for two-bone arms and legs (default true).' },
           roles: ROLES,
           sides: SIDES,
+          joints: JOINTS,
           output: { ...OUTPUT, description: 'Where to save. Required with psd_file (a new .rigby file).' },
           overwrite: OVERWRITE,
         },
@@ -182,9 +275,9 @@ export function createRiggingTools(ws) {
       },
       annotations: EDIT,
       handler: async (args) => {
-        const rig = (doc, alphaOf) => {
+        const rig = (doc, alphaOf, joints) => {
           try {
-            return autoRig(doc, alphaOf, args);
+            return autoRig(doc, alphaOf, { ...args, joints });
           } catch (e) {
             throw wrapError(e);
           }
@@ -192,17 +285,26 @@ export function createRiggingTools(ws) {
         if (args.psd_file !== undefined) {
           if (args.path !== undefined) throw new ToolError("Give either 'path' or 'psd_file'.");
           if (!args.output || path.extname(args.output).toLowerCase() !== '.rigby') throw new ToolError("With psd_file, give 'output': the new .rigby work file.");
-          const { doc, entries, alphaOf } = await artwork(ws, args);
-          const report = rig(doc, alphaOf);
+          const { doc, entries, alphaOf, joints } = await artwork(ws, args);
+          const report = rig(doc, alphaOf, joints);
           const target = await ws.writable(args.output);
           if (!args.overwrite && (await fs.stat(target).then(() => true, () => false))) throw new ToolError(`${args.output} already exists. Pass overwrite: true to replace it.`);
           const file = await save(ws, { file: target, format: 'rigby', doc, entries }, {});
           return { file, ...report };
         }
-        return edit(ws, args, (doc, p) => {
+        return edit(ws, args, async (doc, p) => {
           if (p.format !== 'rigby') throw new ToolError('AutoRig needs artwork with its images: a .rigby work file, or a PSD (psd_file).');
-          return rig(doc, alphaFromEntries(p.entries));
+          return rig(doc, alphaFromEntries(p.entries), await jointHints(ws, doc, args));
         });
+      },
+    },
+    {
+      name: 'update_art', title: 'Update artwork',
+      description: 'Re-import PSD pixels and placement by layer/attachment name, preserving bones, slots, constraints, skins and animations. Existing meshes keep topology, UVs and weights, rebound to the new image rectangle. add_missing also creates slots for new layers, parented to matching AutoRig bones.',
+      inputSchema: { type: 'object', properties: { path: PATH, psd_file: PSD, mode: { type: 'string', enum: ['images', 'add_missing'] }, output: OUTPUT, overwrite: OVERWRITE }, required: ['path', 'psd_file'], additionalProperties: false }, annotations: EDIT,
+      handler: async (args) => {
+        const art = await importPsd(await ws.existing(args.psd_file));
+        return edit(ws, args, (doc, p) => updateArt(doc, p, art, args.mode ?? 'images'));
       },
     },
     {

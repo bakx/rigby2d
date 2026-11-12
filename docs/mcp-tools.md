@@ -9,7 +9,66 @@ root folders. Editing tools save the file in its own format, or a copy when `out
 
 <!-- generated:mcp-tools -->
 
-The server has **42 tools**. Parameters marked **required** must be given; the others are optional.
+The server has **64 tools**. Parameters marked **required** must be given; the others are optional.
+
+### `world_to_local`
+
+Convert a world point to the named bone space at an animation time (setup pose by default). *Read only.*
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `bone` **required** | string |  |
+| `point` **required** | list of number |  |
+| `animation` | string |  |
+| `time` | number |  |
+
+### `render_preview`
+
+Render a clip to one PNG strip/grid or animated GIF, with physics, optional frame-time labels and bone/IK/pivot overlays. Returns its viewable file path and dimensions. GIF requires uniform fps, not explicit times.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `output` **required** | string |  |
+| `times` | list of number |  |
+| `fps` | number |  |
+| `skin` | string |  |
+| `scale` | number |  |
+| `layout` | `'strip'`, `'grid'`, `'gif'` |  |
+| `labels` | boolean |  |
+| `loop` | boolean |  |
+| `overlays` | list of `'bones'`, `'ik_targets'`, `'pivots'` |  |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `render_video`
+
+Render a character clip to WebM (VP9 with alpha) or MP4 (H.264). Uses project framing/background and mixes animation audio. Requires FFmpeg on PATH. Scenes remain available through editor rendering.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `output` **required** | string |  |
+| `fps` | number |  |
+| `size` | list of integer |  |
+| `skin` | string |  |
+| `loop` | boolean |  |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `lint_animations`
+
+Report loop seams, large frame jumps, missing/hidden attachments, pinned IK targets and keys overridden by IK. Loop detection defaults to idle/breathe/walk/run/loop names; set loop explicitly for other clips. Warnings do not make a structurally valid project invalid. *Read only.*
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` | string |  |
+| `loop` | boolean |  |
+| `fps` | number |  |
+| `jump_threshold` | number |  |
+| `rotation_threshold` | number |  |
 
 ### `inspect_project`
 
@@ -168,6 +227,7 @@ Set a key on a bone in an animation (replacing a key at the same time). Values a
 | `x` | number | translate/shear: added to the setup value; scale: factor. |
 | `y` | number | translate/shear: added to the setup value; scale: factor. |
 | `curve` | `'linear'`, `'stepped'`, `'easeIn'`, `'easeOut'`, `'easeInOut'` or list of number | Interpolation to the next key: 'linear' (default), 'stepped', 'easeIn', 'easeOut', 'easeInOut', or a custom cubic bezier [cx1, cy1, cx2, cy2] with control points in key-to-key space (time 0..1 on x, value 0..1 on y; x must stay within 0..1), as in CSS cubic-bezier(). |
+| `space` | `'local'`, `'world'` | World space uses absolute translate/rotate values in the evaluated pose at time. |
 
 ### `delete_bone_key`
 
@@ -214,14 +274,251 @@ Fire an event at a time in an animation (games receive it during playback). Crea
 | `float` | number |  |
 | `string` | string |  |
 
-### `batch_edit`
+### `add_constraint`
 
-Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
+Add IK, transform, path, physics or slider constraints. Physics with several bones creates one constraint per bone (returns their names). Physics motion weights default to zero: set rotate: 1 for hair.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key. |
+| `type` **required** | `'ik'`, `'transform'`, `'path'`, `'physics'`, `'slider'` |  |
+| `name` **required** | string |  |
+| `bones` **required** | list of string |  |
+| `target` | string |  |
+| `settings` | object | Constraint settings in skeleton JSON spelling (e.g. bendPositive, mix, rotate, damping, inertiaGlobal). |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_constraint`
+
+Change constraint settings without replacing other settings.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `settings` **required** | object | Constraint settings in skeleton JSON spelling (e.g. bendPositive, mix, rotate, damping, inertiaGlobal). |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `delete_constraint`
+
+Delete a constraint, its keys and skin memberships.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_constraint_key`
+
+Key constraint values: IK mix/softness/bendPositive/compress/stretch; transform mixes; path position/spacing/mixes; physics inertia/strength/damping/mass/wind/gravity/mix; slider time/mix.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `constraint` **required** | string |  |
+| `time` **required** | number |  |
+| `values` **required** | object |  |
+| `curve` | `'linear'`, `'stepped'`, `'easeIn'`, `'easeOut'`, `'easeInOut'` or list of number | Interpolation to the next key: 'linear' (default), 'stepped', 'easeIn', 'easeOut', 'easeInOut', or a custom cubic bezier [cx1, cy1, cx2, cy2] with control points in key-to-key space (time 0..1 on x, value 0..1 on y; x must stay within 0..1), as in CSS cubic-bezier(). |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `add_skin`
+
+Add an empty skin; slots without overrides retain the default attachments.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `delete_skin`
+
+Delete a skin and its deform/sequence timelines.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `add_attachment`
+
+Add a PNG/WebP region to a slot, optionally in a named skin. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `name` **required** | string |  |
+| `image_file` **required** | string |  |
+| `x` | number |  |
+| `y` | number |  |
+| `rotation` | number |  |
+| `skin` | string |  |
+| `space` | `'local'`, `'world'` |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `replace_image`
+
+Replace the pixels of an attachment, preserving its region geometry or mesh and weights.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `image_file` **required** | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_skin_attachment`
+
+Copy a default attachment into a skin under the same key, optionally substituting a PNG/WebP image.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `skin` **required** | string |  |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `image_file` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `make_mesh`
+
+Turn a region into an alpha outline or rectangular grid mesh. spacing controls grid cells in world units.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `mode` | `'outline'`, `'grid'` |  |
+| `spacing` | number |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `auto_weight`
+
+Bind a mesh to chosen bones by distance. Reports deform timelines removed when the binding layout changes.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `bones` **required** | list of string |  |
+| `falloff` | number |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_weights`
+
+Set selected vertex weights. Each weights entry is [{bone: name, weight: number}]; weights are normalized, at most four influences.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `vertices` **required** | list of integer |  |
+| `weights` **required** | list of list of object |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `smooth_weights`
+
+Average weights over mesh triangle neighbors, preserving the setup geometry.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `iterations` | integer |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `merge_parts`
+
+Join region slots (e.g. upper arm and forearm) into one new outline mesh slot, composited from their setup-pose images and weighted to their bones, so the joint bends without a corner. The new slot draws where the topmost source did; the sources are kept, hidden in the setup pose.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slots` **required** | list of string |  |
+| `into` **required** | string |  |
+| `falloff` | number |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `add_event`
+
+Add an event definition with default values.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `int` | integer |  |
+| `float` | number |  |
+| `string` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_ik_target_key`
+
+Key an IK target at an absolute world point using the pose at that time.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `constraint` **required** | string |  |
+| `time` **required** | number |  |
+| `world_point` **required** | list of number |  |
+| `curve` | `'linear'`, `'stepped'`, `'easeIn'`, `'easeOut'`, `'easeInOut'` or list of number | Interpolation to the next key: 'linear' (default), 'stepped', 'easeIn', 'easeOut', 'easeInOut', or a custom cubic bezier [cx1, cy1, cx2, cy2] with control points in key-to-key space (time 0..1 on x, value 0..1 on y; x must stay within 0..1), as in CSS cubic-bezier(). |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `bake_physics`
+
+Simulate physics and replace affected bone channels with sampled keys. By default disables the selected physics constraints in this clip only. loop settles one period and closes the last key. Refuses bones also driven by another constraint type.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `constraints` | list of string |  |
+| `fps` | number |  |
+| `loop` | boolean |  |
+| `disable` | boolean |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `batch_edit`
+
+Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, add_skin, delete_skin, add_attachment, replace_image, set_skin_attachment, make_mesh, auto_weight, set_weights, smooth_weights, merge_parts, add_event, set_ik_target_key, bake_physics, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
@@ -454,6 +751,7 @@ Preview Rigby AutoRig on layered artwork: which body part each layer is (head, t
 | `psd_file` | string | Layered artwork (.psd) inside the workspace, one layer per body part. Instead of path. |
 | `roles` | object | Override detected roles: { layerName: role }. 'none' leaves a layer unrigged. |
 | `sides` | object | Override sides: { layerName: 'l' \| 'r' }. The character's left (l) is on the image's right when it faces the viewer. |
+| `joints` | object | Joint positions in PSD canvas pixels, origin top left: shoulder_l, elbow_l, wrist_l, hip_l, knee_l, ankle_l, or bone names. Also reads PSD layers named joint:<name> or @<name> (their centre), and <PSD basename>.joints.json; arguments win. |
 
 ### `autorig`
 
@@ -467,7 +765,20 @@ Rigby AutoRig: rig layered artwork in one step. Identifies body parts from layer
 | `ik` | boolean | IK for two-bone arms and legs (default true). |
 | `roles` | object | Override detected roles: { layerName: role }. 'none' leaves a layer unrigged. |
 | `sides` | object | Override sides: { layerName: 'l' \| 'r' }. The character's left (l) is on the image's right when it faces the viewer. |
+| `joints` | object | Joint positions in PSD canvas pixels, origin top left: shoulder_l, elbow_l, wrist_l, hip_l, knee_l, ankle_l, or bone names. Also reads PSD layers named joint:<name> or @<name> (their centre), and <PSD basename>.joints.json; arguments win. |
 | `output` | string | Where to save. Required with psd_file (a new .rigby file). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `update_art`
+
+Re-import PSD pixels and placement by layer/attachment name, preserving bones, slots, constraints, skins and animations. Existing meshes keep topology, UVs and weights, rebound to the new image rectangle. add_missing also creates slots for new layers, parented to matching AutoRig bones.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `psd_file` **required** | string | Layered artwork (.psd) inside the workspace, one layer per body part. Instead of path. |
+| `mode` | `'images'`, `'add_missing'` |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
 ### `map_bones`

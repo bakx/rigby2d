@@ -79,9 +79,14 @@ async function main() {
       'save the file they are given in its own format, or a copy when output is set; check results with sample_pose or validate_project. ' +
       '.rigby work files also hold the workspace (set_workspace), film output settings (set_output), the pose library (save_pose, apply_pose), ' +
       'face controls (add_face_control, set_face_control), and audio tracks with lip-sync (add_audio_track, lip_sync); inspect_project lists them. ' +
-      'run_script runs a Python script with the rigby scripting API for anything the other tools do not cover (dry_run: true for queries). ' +
+      'batch_edit combines editing operations in one atomic save, including constraints, skins, attachments, meshes, poses and face controls. ' +
+      'set_bone_key supports space: world for translation and rotation; set_ik_target_key moves an IK target directly. ' +
+      'add_constraint and set_constraint_key author and animate IK, transform, path, physics and slider constraints. ' +
+      'run_script runs Python with the rigby API (bones, slots, animations, constraints, meshes, skins and events; dry_run: true for queries). ' +
       'Scenes: add_actor puts characters (other .rigby files) on a stage, add_clip places their animations on the scene shots, set_actor and set_layer_depth stage them. autorig rigs layered artwork (a PSD or an unrigged .rigby) in one step; detect_parts previews it. retarget_animation copies animations between characters (map_bones previews the bone matching). ' +
-      'Rendering video is done in the editor (File > Render animation). ' +
+      'update_art re-imports a PSD while retaining rigging and animation. autorig accepts joints in canvas pixels, also from <basename>.joints.json or PSD layers named joint:<name>. merge_parts joins rigid pieces into one bending mesh. ' +
+      'render_preview writes a PNG strip/grid or GIF; render_video writes WebM/MP4 using FFmpeg. bake_physics writes simulated bone keys. ' +
+      'Read AGENTS.md or https://rigby2d.com/llms.txt for conventions and limitations. ' +
       `Files must be inside the workspace: ${workspace.roots.join(', ')}.`,
     tools: [...createTools(workspace), ...createEditTools(workspace), ...createFilmTools(workspace), ...createRiggingTools(workspace), ...createSceneTools(workspace), ...createScriptTools(workspace)],
     log,
