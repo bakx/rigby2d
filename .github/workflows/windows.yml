@@ -1,0 +1,45 @@
+# Builds the Windows editor installers and the AI assistant extension (.mcpb) on every push, and
+# attaches them to the run as artifacts (Actions tab ▸ the run ▸ Artifacts). The full multi-platform
+# release build with signing stays in release.yml.
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['*']
+    paths-ignore: ['site/**', 'docs/**', '**.md']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:mcpb
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rigby2d-${{ steps.version.outputs.version }}-windows
+          path: |
+            src-tauri/target/release/bundle/msi/Rigby2D_*_x64_en-US.msi
+            src-tauri/target/release/bundle/nsis/Rigby2D_*_x64-setup.exe
+            src-tauri/target/release/rigby2d.exe
+            dist-mcpb/Rigby2D-AI-*.mcpb
+          if-no-files-found: error
