@@ -1,6 +1,8 @@
 # Builds the editor for Windows (installers, portable) and Linux (AppImage, .deb) and the AI
 # assistant extension (.mcpb) on every push, and attaches them to the run as artifacts (Actions tab ▸
-# the run ▸ Artifacts). The full release build with macOS, runtimes and signing stays in release.yml.
+# the run ▸ Artifacts). With the updater key (secrets TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD) the installers are signed for auto-update. Releases with the
+# full package set (macOS, runtimes, latest.json) come from release.yml: push a tag v<app version>.
 name: Build
 
 on:
@@ -31,7 +33,13 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - name: Build the editor
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'; else npm run build; fi
       - run: npm run build:mcpb
 
       - uses: actions/upload-artifact@v7
@@ -39,7 +47,9 @@ jobs:
           name: rigby2d-${{ steps.version.outputs.version }}-windows
           path: |
             src-tauri/target/release/bundle/msi/Rigby2D_*_x64_en-US.msi
+            src-tauri/target/release/bundle/msi/*.sig
             src-tauri/target/release/bundle/nsis/Rigby2D_*_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/rigby2d.exe
             dist-mcpb/Rigby2D-AI-*.mcpb
           if-no-files-found: error
@@ -68,12 +78,18 @@ jobs:
       - id: version
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
-      - run: npm run build -- --bundles appimage,deb
+      - name: Build the editor
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run build -- --bundles appimage,deb --config '{"bundle":{"createUpdaterArtifacts":true}}'; else npm run build -- --bundles appimage,deb; fi
 
       - uses: actions/upload-artifact@v7
         with:
           name: rigby2d-${{ steps.version.outputs.version }}-linux
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error

@@ -4,7 +4,8 @@
 #     SIGNPATH_API_TOKEN, turn signing on. Without them the files are built unsigned.
 #   - Each signing request waits for a manual approval in SignPath (its policy for open source).
 # Run it from the Actions tab (Run workflow) or by pushing a tag such as v0.3.1. The files are
-# attached to the run as artifacts; publishing the GitHub release stays a deliberate, manual step.
+# attached to the run as artifacts. A tag v<app version> (src-tauri/tauri.conf.json) also publishes
+# them as the latest GitHub release, with latest.json for the editors' auto-update.
 name: Release build
 
 on:
@@ -27,6 +28,7 @@ jobs:
     runs-on: windows-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      app: ${{ steps.version.outputs.app }}
       windows-artifact: ${{ steps.windows.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
@@ -43,7 +45,9 @@ jobs:
 
       - id: version
         shell: bash
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "app=$(node -p "require('./src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
 
       - run: npm ci
       - run: npm test
@@ -94,16 +98,17 @@ jobs:
         shell: bash
         env:
           V: ${{ steps.version.outputs.version }}
+          A: ${{ steps.version.outputs.app }}
         run: |
           mkdir -p release
-          cp "src-tauri/target/release/bundle/msi/Rigby2D_${V}_x64_en-US.msi" release/
-          cp "src-tauri/target/release/bundle/nsis/Rigby2D_${V}_x64-setup.exe" release/
+          cp "src-tauri/target/release/bundle/msi/Rigby2D_${A}_x64_en-US.msi" release/
+          cp "src-tauri/target/release/bundle/nsis/Rigby2D_${A}_x64-setup.exe" release/
           # Update signatures for both installers: an MSI install updates with the MSI, an NSIS
           # install with the setup program (latest.json), so neither asks to uninstall the other.
-          for sig in "src-tauri/target/release/bundle/nsis/Rigby2D_${V}_x64-setup.exe.sig" "src-tauri/target/release/bundle/msi/Rigby2D_${V}_x64_en-US.msi.sig"; do
+          for sig in "src-tauri/target/release/bundle/nsis/Rigby2D_${A}_x64-setup.exe.sig" "src-tauri/target/release/bundle/msi/Rigby2D_${A}_x64_en-US.msi.sig"; do
             if [ -f "$sig" ]; then cp "$sig" release/; fi
           done
-          cp src-tauri/target/release/rigby2d.exe "release/Rigby2D_${V}_x64_portable.exe"
+          cp src-tauri/target/release/rigby2d.exe "release/Rigby2D_${A}_x64_portable.exe"
           cp "dist-mcpb/Rigby2D-AI-${V}.mcpb" release/
           cp "runtimes/godot/dist/rigby2d-godot-addon-${V}-windows-x64.zip" release/
           cp "runtimes/godot/dist/rigby2d-godot-demo-${V}-windows-x64.zip" release/
@@ -160,7 +165,9 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf file
       - id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "app=$(node -p "require('./src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - name: Build the editor
         env:
@@ -174,11 +181,12 @@ jobs:
       - name: Collect the release files
         env:
           V: ${{ steps.version.outputs.version }}
+          A: ${{ steps.version.outputs.app }}
         run: |
           mkdir -p release
-          cp src-tauri/target/release/bundle/appimage/*.AppImage "release/Rigby2D_${V}_amd64.AppImage"
-          for sig in src-tauri/target/release/bundle/appimage/*.AppImage.sig; do [ -f "$sig" ] && cp "$sig" "release/Rigby2D_${V}_amd64.AppImage.sig"; done
-          cp src-tauri/target/release/bundle/deb/*.deb "release/Rigby2D_${V}_amd64.deb"
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "release/Rigby2D_${A}_amd64.AppImage"
+          for sig in src-tauri/target/release/bundle/appimage/*.AppImage.sig; do [ -f "$sig" ] && cp "$sig" "release/Rigby2D_${A}_amd64.AppImage.sig"; done
+          cp src-tauri/target/release/bundle/deb/*.deb "release/Rigby2D_${A}_amd64.deb"
           cp "runtimes/godot/dist/rigby2d-godot-addon-${V}-linux-x64.zip" release/
           cp "runtimes/godot/dist/rigby2d-godot-demo-${V}-linux-x64.zip" release/
           ls -la release
@@ -207,7 +215,9 @@ jobs:
             src-tauri
             runtimes/rust
       - id: version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "app=$(node -p "require('./src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - name: Build the editor
         env:
@@ -226,12 +236,13 @@ jobs:
       - name: Collect the release files
         env:
           V: ${{ steps.version.outputs.version }}
+          A: ${{ steps.version.outputs.app }}
         run: |
           mkdir -p release
-          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg "release/Rigby2D_${V}_universal.dmg"
+          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg "release/Rigby2D_${A}_universal.dmg"
           # The auto-update archive and its signature (when the updater key is set).
           upd=src-tauri/target/universal-apple-darwin/release/bundle/macos/Rigby2D.app.tar.gz
-          if [ -f "$upd.sig" ]; then cp "$upd" "release/Rigby2D_${V}_universal.app.tar.gz"; cp "$upd.sig" "release/Rigby2D_${V}_universal.app.tar.gz.sig"; fi
+          if [ -f "$upd.sig" ]; then cp "$upd" "release/Rigby2D_${A}_universal.app.tar.gz"; cp "$upd.sig" "release/Rigby2D_${A}_universal.app.tar.gz.sig"; fi
           cp "runtimes/godot/dist/rigby2d-godot-addon-${V}-macos.zip" release/
           cp "runtimes/godot/dist/rigby2d-godot-demo-${V}-macos.zip" release/
           ls -la release
@@ -252,7 +263,7 @@ jobs:
           pattern: rigby2d-${{ needs.build.outputs.version }}-*
           path: release
           merge-multiple: true
-      - run: node .github/scripts/updater-manifest.mjs release "${{ needs.build.outputs.version }}"
+      - run: node .github/scripts/updater-manifest.mjs release "${{ needs.build.outputs.app }}"
       - uses: actions/upload-artifact@v7
         with:
           name: rigby2d-${{ needs.build.outputs.version }}-updater
@@ -281,3 +292,27 @@ jobs:
           name: rigby2d-${{ needs.build.outputs.version }}-signed
           path: signed/
           if-no-files-found: error
+
+  # A tag v<app version> publishes every artifact (signed ones replacing unsigned) as the latest
+  # GitHub release, which installed editors update from through latest.json.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, build-linux, build-macos, updater]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: rigby2d-${{ needs.build.outputs.version }}-*
+          path: release
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ needs.build.outputs.app }}
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          test "v$APP" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME must be v$APP, the version in src-tauri/tauri.conf.json."; exit 1; }
+          ls -la release
+          gh release create "$GITHUB_REF_NAME" release/* --latest --title "Rigby2D $V" --notes "Rigby2D $V, built from this repository's source at tag $GITHUB_REF_NAME. Installed editors auto-update from this release."

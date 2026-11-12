@@ -11,7 +11,8 @@ import path from 'node:path';
 
 const [dir, version] = process.argv.slice(2);
 if (!dir || !version) throw new Error('usage: updater-manifest.mjs <dir> <version>');
-const base = `https://github.com/jaisurya-dev-art/rigby2d/releases/download/v${version}`;
+const repo = process.env.GITHUB_REPOSITORY ?? 'jaisurya-dev-art/rigby2d';
+const base = `https://github.com/${repo}/releases/download/v${version}`;
 
 /** The update file and its .sig for a platform; null when the build had no signing key. */
 function entry(file) {
@@ -45,7 +46,7 @@ if (!Object.keys(platforms).length) {
 
 const manifest = {
   version,
-  notes: `Rigby2D ${version}: see https://github.com/jaisurya-dev-art/rigby2d/releases/tag/v${version}`,
+  notes: `Rigby2D ${version}: see https://github.com/${repo}/releases/tag/v${version}`,
   pub_date: new Date().toISOString(),
   platforms,
 };
