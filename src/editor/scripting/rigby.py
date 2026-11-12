@@ -177,6 +177,10 @@ class Slot:
         """Add a region using an image already imported into the project."""
         return _call("add_attachment", slot=self.name, name=name, image=image, x=x, y=y, rotation=rotation, skin=_name(skin), space=space)
 
+    def duplicate_attachment(self, attachment, new_name, skin=None, target_skin=None):
+        """Copy an attachment under a new name with the same geometry, weights and deform keys."""
+        return _call("duplicate_attachment", slot=self.name, attachment=attachment, new_name=new_name, skin=_name(skin), target_skin=_name(target_skin))
+
     def make_mesh(self, attachment, mode="grid", spacing=None, skin=None, alpha=None):
         args = dict(slot=self.name, attachment=attachment, mode=mode, skin=_name(skin))
         if spacing is not None:

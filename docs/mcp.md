@@ -25,7 +25,8 @@ or [llms.txt](https://rigby2d.com/llms.txt).
   the same `cutout` options. `convert_project` with `atlas: true` packs the images into
   `<name>.atlas` and `<name>.png` pages next to the skeleton (`pma`, `trim`, `scale`, `max_size`).
 - Add attachments, replace pixels, and build skins with `add_attachment`, `replace_image`,
-  `add_skin`, `set_skin_attachment`, `delete_skin`.
+  `add_skin`, `set_skin_attachment`, `delete_skin`. `duplicate_attachment` copies an attachment
+  under a new name with the same mesh and weights, for a variant that deforms identically.
 - Convert regions to meshes and edit weights with `make_mesh`, `auto_weight`, `set_weights`,
   `smooth_weights`. Binding-layout changes report removed deform timelines. `merge_parts` joins
   rigid pieces (an upper arm and forearm) into one mesh weighted to both bones, so the elbow bends

@@ -30,7 +30,7 @@ they do not change an already-open editor document. Reload that document after e
 | --- | --- | --- | --- |
 | Bones, slots, animations and keys | Editing tools, `batch_edit`, world keys | Bone/Slot/Animation objects; `space="world"` | Yes |
 | IK, transform, path, physics, slider | `add_constraint`, `set_constraint`, `delete_constraint`, `set_constraint_key` | `constraints`, `add_constraint`, `Constraint.set/delete`, `Animation.key_constraint` | Yes |
-| Region attachments and skins | `add_attachment`, `replace_image`, `add_skin`, `set_skin_attachment`, `delete_skin` | `Slot.add_attachment` using an existing project image; `add_skin`, `Skin.set_attachment/delete` | Yes |
+| Region attachments and skins | `add_attachment`, `replace_image`, `duplicate_attachment` (same mesh/weights under a new name, for `replace_image` + `set_attachment_key` variants), `add_skin`, `set_skin_attachment`, `delete_skin` | `Slot.add_attachment` using an existing project image; `Slot.duplicate_attachment`; `add_skin`, `Skin.set_attachment/delete` | Yes |
 | Meshes and weights | `make_mesh` outline/grid, `auto_weight`, `set_weights`, `smooth_weights`, `merge_parts` (join rigid pieces into one bending mesh) | `Slot.make_mesh`, `Mesh.data/vertices/triangles/weights`, weight methods | Yes, including manual vertex editing |
 | Events | `add_event`, `set_event_key` | `add_event`, `events`, `Animation.key_event` | Yes |
 | Art preparation | `cutout_image` (flat background off, fringe un-mixed, `mask_polygons` cut parts from one image), `build_psd` (layers from PNG/JPG/WebP), `cutout` option on `add_attachment` / `replace_image` | Use MCP | Image import |

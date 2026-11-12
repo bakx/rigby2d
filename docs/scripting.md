@@ -177,6 +177,8 @@ anim.key_event("step", 0.5)
 `set(**settings)` and `delete()`. `rigby.skins()` returns skins with `slots`,
 `set_attachment(slot, attachment, image=None)` and `delete()`. `Slot.add_attachment` uses an
 existing project image and takes `x`, `y`, `rotation`, `skin`, and `space` (`local` or `world`).
+`Slot.duplicate_attachment(attachment, new_name, skin=None, target_skin=None)` copies an attachment
+with its geometry, weights and deform keys, so a variant with other art deforms identically.
 
 `Mesh.data`, `.vertices`, `.triangles` and `.weights` expose mesh data. `set_weights(vertices,
 weights)` accepts vertex indices and one list of `{bone: name, weight: number}` per vertex.

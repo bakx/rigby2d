@@ -237,6 +237,7 @@ export const API = {
   delete_skin: (app, args) => author.deleteSkin(app.doc, args),
   set_skin_attachment: (app, args) => author.setSkinAttachment(app.doc, args),
   add_attachment: (app, args) => author.addAttachment(app.doc, args),
+  duplicate_attachment: (app, args) => author.duplicateAttachment(app.doc, args),
   mesh: (app, args) => structuredClone(author.attachmentOf(app.doc, args).att),
   make_mesh: (app, args) => author.makeMesh(app.doc, args, args.alpha),
   auto_weight: (app, args) => author.weightMesh(app.doc, args),
