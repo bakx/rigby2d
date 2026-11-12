@@ -315,4 +315,4 @@ jobs:
         run: |
           test "v$APP" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME must be v$APP, the version in src-tauri/tauri.conf.json."; exit 1; }
           ls -la release
-          gh release create "$GITHUB_REF_NAME" release/* --latest --title "Rigby2D $V" --notes "Rigby2D $V, built from this repository's source at tag $GITHUB_REF_NAME. Installed editors auto-update from this release."
+          gh release create "$GITHUB_REF_NAME" release/* -R "$GITHUB_REPOSITORY" --latest --title "Rigby2D $V" --notes "Rigby2D $V, built from this repository's source at tag $GITHUB_REF_NAME. Installed editors auto-update from this release."
