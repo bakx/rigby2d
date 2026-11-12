@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { Skeleton } from '../src/core/model.js';
-import { pack } from '../src/editor/pack.js';
+import { pack } from '../src/core/pack.js';
 import { robot } from '../src/editor/sample.js';
 
 test('pack places without overlap', () => {
   const items = Array.from({ length: 19 }, (_, k) => ({ name: `i${k}`, width: 10 * (k + 1), height: 7 * (19 - k) }));
-  const { width, height, regions } = pack(items);
+  const [{ width, height, regions }] = pack(items);
   regions.forEach((a, i) => {
     assert.ok(a.x + a.width <= width && a.y + a.height <= height);
     for (const b of regions.slice(i + 1)) {

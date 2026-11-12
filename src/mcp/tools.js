@@ -5,14 +5,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseAtlas } from '../core/atlas.js';
+import { atlasFilter, parseAtlas } from '../core/atlas.js';
 import { isSkeletonBinary, readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
 import { listConstraints } from '../core/constraintdata.js';
 import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/interop.js';
 import { Skeleton } from '../core/model.js';
 import { Pose } from '../core/pose.js';
 import { atlasLookup, imageLookup } from '../core/draw.js';
-import { usedImages } from '../editor/io.js';
+import { packAtlas, usedImages } from '../core/pack.js';
+import { unpremultiply } from '../core/rgba.js';
 import { FORMATS as SHEET_FORMATS, buildSpriteSheet } from '../editor/spritesheet.js';
 import { defoldFolderOf, defoldModelFiles, unpackAtlas } from '../editor/defold.js';
 import { unzip } from '../editor/zip.js';
@@ -423,7 +424,7 @@ function validate(p) {
 
 // ---- conversion -------------------------------------------------------------------------------
 
-async function convert(ws, { input, output, version = '4.3', overwrite = false }) {
+async function convert(ws, { input, output, version = '4.3', overwrite = false, atlas = false, pma = false, filter, padding = 2, max_size = 4096, power_of_two = false, scale = 1, trim = false }) {
   const source = await ws.existing(input);
   const target = await ws.writable(output);
   if (path.resolve(source) === path.resolve(target)) throw new ToolError('The output must be a different file than the input.');
@@ -450,7 +451,22 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
   } catch (e) {
     throw new ToolError(`Conversion failed: ${e.message}`);
   }
+  let atlasInfo = null, atlasFiles = [];
+  if (atlas) {
+    const stem = target.slice(0, -ext.length), dir = path.dirname(target);
+    const images = await projectImages(p, new Set(usedImages(p.doc)));
+    const pixel = (n) => { const v = images.get(n); return v ? (v.bytes ? decodePng(v.bytes) : { width: v.width, height: v.height, data: v.rgba }) : null; };
+    let packed;
+    try {
+      packed = packAtlas(p.doc, pixel, { name: path.basename(stem), filter: filter ? [filter, filter] : atlasFilter(p.doc.textureFilter), padding, maxSize: max_size, powerOfTwo: power_of_two, pma, trim, scale });
+    } catch (e) { throw new ToolError(`Atlas packing failed: ${e.message}`); }
+    atlasFiles = [[`${stem}.atlas`, packed.atlas], ...packed.pages.map((pg) => [path.join(dir, pg.name), encodePng(pg)])];
+    if (!overwrite) for (const [f] of atlasFiles) if (await fs.stat(f).then(() => true, () => false)) throw new ToolError(`${f} already exists. Pass overwrite: true to replace it.`);
+    if (packed.missing.length) (warnings ??= []).push(`${packed.missing.length} image(s) not found, left out of the atlas: ${packed.missing.join(', ')}.`);
+    atlasInfo = { file: `${stem}.atlas`, pages: packed.pages.map((pg) => ({ file: path.join(dir, pg.name), width: pg.width, height: pg.height, regions: pg.regions.length })), pma, scale, trim, missingImages: packed.missing };
+  }
   await fs.writeFile(target, bytes);
+  for (const [f, data] of atlasFiles) await fs.writeFile(f, data);
   return {
     input: source,
     output: target,
@@ -458,8 +474,36 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
     version: ext === '.skel' ? '4.3' : version,
     bytes: bytes.length,
     warnings,
-    note: 'Only skeleton data is written. Use the existing .atlas and page images, or export from the Rigby2D editor to repack them.',
+    atlas: atlasInfo,
+    note: atlasInfo ? 'Skeleton and atlas written.' : 'Only skeleton data is written. Pass atlas: true to pack the images into <name>.atlas and <name>.png next to it.',
   };
+}
+
+/**
+ * The images a loaded project uses, as { bytes } (PNG) or { width, height, rgba }: from the work file,
+ * unpacked from its atlas (premultiplied pages made straight), or read from its images folder.
+ */
+export async function projectImages(p, used) {
+  const images = new Map();
+  const dir = path.dirname(p.file);
+  if (p.format === 'rigby') {
+    for (const n of used) if (p.entries.has(`images/${n}.png`)) images.set(n, { bytes: p.entries.get(`images/${n}.png`) });
+  } else if (p.imageSource?.startsWith('atlas ')) {
+    const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
+    const pages = new Map();
+    for (const page of atlas.pages) {
+      const tex = decodePng(await fs.readFile(path.join(dir, page.name)));
+      pages.set(page.name, page.pma ? { ...tex, data: unpremultiply(tex.data) } : tex);
+    }
+    for (const [n, picture] of unpackAtlas(atlas, pages)) if (used.has(n)) images.set(n, picture);
+  } else if (p.imageSource?.startsWith('folder ')) {
+    const imagesDir = path.join(dir, p.imageSource.slice(7));
+    for (const n of used) {
+      const bytes = await fs.readFile(path.join(imagesDir, `${n}.png`)).catch(() => null);
+      if (bytes) images.set(n, { bytes });
+    }
+  }
+  return images;
 }
 
 // ---- Defold game objects ----------------------------------------------------------------------
@@ -480,24 +524,8 @@ async function defoldModel(ws, { input, output_folder, name, folder, animation =
   if (!projectFolder.startsWith('/')) throw new ToolError('folder is a path in the Defold project and starts with "/", such as "/assets/hero".');
   if (animation && !p.doc.animations.some((a) => a.name === animation)) throw new ToolError(`No animation '${animation}'. The skeleton has: ${p.doc.animations.map((a) => a.name).join(', ') || 'none'}.`);
   if (skin && skin !== 'default' && !p.doc.skins.some((s) => s.name === skin)) throw new ToolError(`No skin '${skin}'.`);
-  // The images, as PNG bytes: from the work file, an images folder, or unpacked from the atlas.
   const used = new Set(usedImages(p.doc));
-  const images = new Map();
-  const dir = path.dirname(source);
-  if (p.format === 'rigby') {
-    for (const n of used) if (p.entries.has(`images/${n}.png`)) images.set(n, { bytes: p.entries.get(`images/${n}.png`) });
-  } else if (p.imageSource?.startsWith('atlas ')) {
-    const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
-    const pages = new Map();
-    for (const page of atlas.pages) pages.set(page.name, decodePng(await fs.readFile(path.join(dir, page.name))));
-    for (const [n, picture] of unpackAtlas(atlas, pages)) if (used.has(n)) images.set(n, picture);
-  } else if (p.imageSource?.startsWith('folder ')) {
-    const imagesDir = path.join(dir, p.imageSource.slice(7));
-    for (const n of used) {
-      const bytes = await fs.readFile(path.join(imagesDir, `${n}.png`)).catch(() => null);
-      if (bytes) images.set(n, { bytes });
-    }
-  }
+  const images = await projectImages(p, used);
   const missing = [...used].filter((n) => !images.has(n));
   const files = defoldModelFiles({ doc: p.doc, images, name: base, folder: projectFolder, animation, skin });
   const targets = [];
@@ -669,7 +697,7 @@ export function createTools(ws) {
     {
       name: 'convert_project',
       title: 'Convert project',
-      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. Writes skeleton data only; atlas and images are not repacked. Refuses to replace an existing file unless overwrite is true.',
+      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -677,6 +705,14 @@ export function createTools(ws) {
           output: { type: 'string', description: 'Output file ending in .json or .skel, inside the workspace. Its folder must exist.' },
           version: { type: 'string', enum: JSON_VERSIONS, description: 'Skeleton JSON format version (default 4.3; .skel is always 4.3).' },
           overwrite: { type: 'boolean', description: 'Replace the output file if it exists (default false).' },
+          atlas: { type: 'boolean', description: 'Also pack the used images into <name>.atlas and <name>.png next to the output (default false). Region names are the attachment paths.' },
+          pma: { type: 'boolean', description: 'Premultiply the page pixels and write pma: true (default false).' },
+          filter: { type: 'string', enum: ['Linear', 'Nearest'], description: "Page texture filter (default: the project's texture filter)." },
+          padding: { type: 'integer', minimum: 0, maximum: 64, description: 'Pixels between regions (default 2).' },
+          max_size: { type: 'integer', minimum: 64, maximum: 16384, description: 'Largest page side; more pages are added when it overflows (default 4096).' },
+          power_of_two: { type: 'boolean', description: 'Round page sizes up to powers of two (default false).' },
+          scale: { type: 'number', exclusiveMinimum: 0, maximum: 4, description: 'Resample the images by this factor and write the atlas scale line; the skeleton is unchanged (default 1).' },
+          trim: { type: 'boolean', description: 'Crop each region to its alpha bounds and write offsets, so placement does not change (default false).' },
         },
         required: ['input', 'output'],
         additionalProperties: false,

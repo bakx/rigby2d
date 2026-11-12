@@ -10,9 +10,8 @@ import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/int
 import { transform } from '../core/math.js';
 import { writeSceneManifest } from '../core/scene.js';
 import { Pose } from '../core/pose.js';
-import { sequenceFrameName } from '../core/sequence.js';
 import { Skeleton, makeAttachment, makeSlot, uniqueName } from '../core/model.js';
-import { pack } from './pack.js';
+import { packAtlas, usedImages } from '../core/pack.js';
 import { unzip, zip } from './zip.js';
 import { dragonBonesToSkeleton, isDragonBones, isDragonBonesAtlas } from './dragonbones.js';
 import { alphaBounds, backToFront, fileName, isLayerSet, layerCenter, layerName, pixelArtScale } from './pngset.js';
@@ -200,19 +199,7 @@ async function openWorkfile(path, fs, images) {
   return { doc, warnings, audio, actorFiles };
 }
 
-/** Every image referenced by an attachment in any skin. */
-export function usedImages(doc) {
-  const names = new Set();
-  const visit = (a) => {
-    if (a.type === 'region' || a.type === 'mesh' || a.type === 'linkedmesh' || a.type === undefined) {
-      if (a.sequence) for (let i = 0; i < (a.sequence.count ?? 1); i++) names.add(sequenceFrameName(a, i));
-      else names.add(a.image);
-    }
-  };
-  for (const s of doc.slots) s.attachments.forEach(visit);
-  for (const skin of doc.skins) for (const e of skin.slots) e.attachments.forEach(visit);
-  return [...names].sort();
-}
+export { usedImages };
 
 /** Converts premultiplied-alpha pixels to straight alpha in place. */
 function unpremultiply(canvas) {
@@ -359,22 +346,6 @@ async function openSkeletonJson(path, fs, obj, images) {
   return { doc, warnings };
 }
 
-/** Packs the images used by `doc` into one sheet. Returns { sheet, width, height, regions }. */
-function packSheet(doc, images) {
-  const items = usedImages(doc).map((name) => {
-    const canvas = images.get(name);
-    if (!canvas) throw new Error(`image '${name}' is missing`);
-    return { name, width: canvas.width, height: canvas.height, canvas };
-  });
-  const { width, height, regions } = pack(items);
-  const sheet = document.createElement('canvas');
-  sheet.width = width;
-  sheet.height = height;
-  const ctx = sheet.getContext('2d');
-  for (const r of regions) ctx.drawImage(items.find((i) => i.name === r.name).canvas, r.x, r.y);
-  return { sheet, width, height, regions };
-}
-
 /**
  * Exports skeleton JSON: `<name>.json` (version "3.8" or "4.2"), `<name>.atlas` and
  * `<name>.png`. Returns { atlasPath, warnings }.
@@ -427,14 +398,20 @@ export async function exportScene(path, fs, doc, images, actorDocs) {
   return { files, warnings };
 }
 
-/** Packs the used images into `<name>.png` and writes `<name>.atlas`. Returns the atlas path. */
+/** Packs the used images into `<name>.png` (more pages when 8192px overflows) and writes `<name>.atlas`. Returns the atlas path. */
 async function writePackedAtlas(path, fs, doc, images) {
-  const { sheet, width, height, regions } = packSheet(doc, images);
   const pngPath = withExtension(path, 'png');
   const atlasPath = withExtension(path, 'atlas');
-  const page = { name: basename(pngPath), width, height, filter: atlasFilter(doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) };
-  await fs.writeFile(pngPath, await encodePng(sheet));
-  await fs.writeText(atlasPath, writeAtlas([page]));
+  const { pages, atlas, missing } = packAtlas(doc, (name) => { const c = images.get(name); return c && rgbaOf(c); }, { name: stem(pngPath), filter: atlasFilter(doc.textureFilter), maxSize: 8192, powerOfTwo: true });
+  if (missing.length) throw new Error(`image '${missing[0]}' is missing`);
+  for (const page of pages) {
+    const canvas = document.createElement('canvas');
+    canvas.width = page.width;
+    canvas.height = page.height;
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(page.data.buffer), page.width, page.height), 0, 0);
+    await fs.writeFile(pngPath.slice(0, pngPath.length - basename(pngPath).length) + page.name, await encodePng(canvas));
+  }
+  await fs.writeText(atlasPath, atlas);
   return atlasPath;
 }
 
