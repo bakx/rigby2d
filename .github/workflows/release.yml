@@ -199,7 +199,7 @@ jobs:
   # macOS: one universal editor (Apple silicon and Intel) as a .dmg, and the Godot runtime as a
   # universal library. Not signed with an Apple Developer ID yet: see docs/installation.md.
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
