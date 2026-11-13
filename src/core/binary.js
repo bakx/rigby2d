@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// Binary skeleton files (".skel"), format 4.3. Converts between the binary encoding and the
-// skeleton JSON object structure, so all other code works with one representation.
+// Binary skeleton files (".skel"), format 4.3, and reading of format 4.2. Converts between the
+// binary encoding and the skeleton JSON object structure, so all other code works with one
+// representation. A 4.2 file is read into the 4.2 JSON structure (typed constraint lists with an
+// order, fixed transform mixes), which interop.js reads like a 4.2 JSON export; 4.3 files into the
+// 4.3 structure. The two layouts share everything but: bone length/inherit order, the constraint
+// sections (4.2: IK, transform, path, physics lists, each entry with its order; 4.3: one list with a
+// type byte, and property-mapped transform constraints), skin constraint references (per type in
+// 4.2), weighted vertices (4.3 adds a size hint) and a trailing mesh byte, and the animation tail
+// (4.3 adds slider keys, an extra section and a color).
 //
 // The layout was determined clean-room by comparing paired JSON and binary exports of the same
 // skeleton (black-box observation of exported data). Only encodings that were observed are
@@ -64,11 +71,23 @@ const PHYSICS_GLOBALS = ['inertia', 'strength', 'damping', 'mass', 'wind', 'grav
 const PHYSICS_DEFAULTS = { inertia: 0.5, strength: 100, damping: 0.85, fps: 60, limit: 5000 };
 /** Physics key types by code (only wind keys have been observed so far). */
 const PHYSICS_KEY_TYPES = { 5: 'wind' };
+/** 4.2 physics key types (wind and mix observed; reset keys hold times only). */
+const PHYSICS_KEY_TYPES_42 = { 0: 'inertia', 1: 'strength', 2: 'damping', 4: 'mass', 5: 'wind', 6: 'gravity', 7: 'mix', 8: 'reset' };
 const PHYSICS_KEY_CODES = { wind: 5 };
 const IK_SKIN = 0x01;
 const IK_BEND_NEGATIVE = 0x04;
 const IK_MIX_NOT_0 = 0x20;
 const IK_MIX_NOT_1 = 0x40;
+/**
+ * 4.2 IK constraint data: the options are flag bits in field order (bend direction, compress,
+ * stretch, uniform), the mix as in 4.3, and softness a float that follows the mix. Seen so far:
+ * bend and stretch bits on two-bone chains, compress and stretch on single-bone ones.
+ */
+const IK_BEND_POSITIVE_42 = 0x02;
+const IK_COMPRESS_42 = 0x04;
+const IK_STRETCH_42 = 0x08;
+const IK_UNIFORM_42 = 0x10;
+const IK_SOFTNESS_42 = 0x80;
 /** IK key flags: the previous segment is a bezier (8 floats follow) or stepped. */
 const IK_KEY_BEZIER = 0x80;
 const IK_KEY_STEPPED = 0x40;
@@ -261,7 +280,8 @@ export function readSkeletonBinary(bytes) {
   const hash = toBase64(bytes.subarray(0, 8));
   r.p = 8;
   const version = r.string();
-  if (!/^4\.3/.test(version ?? '')) throw new Unsupported(`Binary format ${version}`);
+  r.v42 = /^4\.2/.test(version ?? '');
+  if (!r.v42 && !/^4\.3/.test(version ?? '')) throw new Unsupported(`Binary format ${version}`);
   const skeleton = { hash, [VERSION_FIELD]: version, x: r.float(), y: r.float(), width: r.float(), height: r.float() };
   const referenceScale = r.float();
   if (referenceScale !== 100) skeleton.referenceScale = referenceScale;
@@ -290,8 +310,14 @@ export function readSkeletonBinary(bytes) {
     const scaleY = r.float();
     const shearX = r.float();
     const shearY = r.float();
-    const inherit = INHERIT[r.byte()] ?? 'normal';
-    const length = r.float();
+    let inherit, length;
+    if (r.v42) {
+      length = r.float();
+      inherit = INHERIT[r.varint()] ?? 'normal';
+    } else {
+      inherit = INHERIT[r.byte()] ?? 'normal';
+      length = r.float();
+    }
     if (length) b.length = length;
     if (rotation) b.rotation = rotation;
     if (x) b.x = x;
@@ -338,7 +364,8 @@ export function readSkeletonBinary(bytes) {
 
   // Constraints, in application order.
   out.constraints = [];
-  const nConstraints = r.varint();
+  const nConstraints = r.v42 ? 0 : r.varint();
+  if (r.v42) readConstraints42(r, out);
   for (let i = 0; i < nConstraints; i++) {
     const name = r.string();
     const type = r.byte();
@@ -372,11 +399,18 @@ export function readSkeletonBinary(bytes) {
     const nBones = r.varint();
     if (nBones) skin.bones = [];
     for (let k = 0; k < nBones; k++) skin.bones.push(out.bones[r.varint()].name);
-    const nConstraintRefs = r.varint();
-    for (let k = 0; k < nConstraintRefs; k++) {
-      const c = out.constraints?.[r.varint()];
-      if (!c) throw new Error('invalid constraint index in .skel data');
-      (skin[c.type] ??= []).push(c.name);
+    if (r.v42) {
+      for (const type of CONSTRAINT_LISTS_42) {
+        const n = r.varint();
+        for (let k = 0; k < n; k++) (skin[type] ??= []).push(constraint42(r, out, type, r.varint()).name);
+      }
+    } else {
+      const nConstraintRefs = r.varint();
+      for (let k = 0; k < nConstraintRefs; k++) {
+        const c = out.constraints?.[r.varint()];
+        if (!c) throw new Error('invalid constraint index in .skel data');
+        (skin[c.type] ??= []).push(c.name);
+      }
     }
     skin.attachments = readSkin(r, out, nonessential);
     out.skins.push(skin);
@@ -440,15 +474,22 @@ export function readSkeletonBinary(bytes) {
 function readIk(r, name, bones, out) {
   const target = out.bones[r.varint()].name;
   const flags = r.byte();
-  if (flags & ~(IK_SKIN | IK_BEND_NEGATIVE | IK_MIX_NOT_0 | IK_MIX_NOT_1)) {
-    throw new Unsupported(`IK constraint options (flags 0x${flags.toString(16)}) on '${name}'`);
-  }
+  const known = r.v42 ? 0xff : IK_SKIN | IK_BEND_NEGATIVE | IK_MIX_NOT_0 | IK_MIX_NOT_1;
+  if (flags & ~known) throw new Unsupported(`IK constraint options (flags 0x${flags.toString(16)}) on '${name}'`);
   const c = { type: 'ik', name, target, bones };
   if (flags & IK_SKIN) c.skin = true;
-  // Single-bone constraints have no bend direction; exporters leave it out.
-  if (flags & IK_BEND_NEGATIVE && bones.length > 1) c.bendPositive = false;
+  if (r.v42) {
+    if (!(flags & IK_BEND_POSITIVE_42) && bones.length > 1) c.bendPositive = false;
+    if (flags & IK_COMPRESS_42) c.compress = true;
+    if (flags & IK_STRETCH_42) c.stretch = true;
+    if (flags & IK_UNIFORM_42) c.uniform = true;
+  } else if (flags & IK_BEND_NEGATIVE && bones.length > 1) {
+    // Single-bone constraints have no bend direction; exporters leave it out.
+    c.bendPositive = false;
+  }
   const mix = readMix(r, flags & IK_MIX_NOT_0, flags & IK_MIX_NOT_1);
   if (mix !== 1) c.mix = mix;
+  if (flags & IK_SOFTNESS_42) c.softness = r.float();
   return c;
 }
 
@@ -511,8 +552,7 @@ function readSliderKeys(r, out, anim) {
 function readPathKeys(r, out, anim) {
   const n = r.varint();
   for (let i = 0; i < n; i++) {
-    const name = out.constraints[r.varint()]?.name;
-    if (name === undefined) throw new Error('invalid constraint index in .skel data');
+    const name = constraint42(r, out, 'path', r.varint()).name;
     const nTypes = r.varint();
     for (let t = 0; t < nTypes; t++) {
       const code = r.byte();
@@ -534,14 +574,22 @@ function readPhysicsKeys(r, out, anim) {
   const n = r.varint();
   for (let i = 0; i < n; i++) {
     const index = r.varint();
-    const name = index === 0 ? '' : out.constraints[index - 1]?.name;
-    if (name === undefined) throw new Error('invalid constraint index in .skel data');
+    const name = index === 0 ? '' : constraint42(r, out, 'physics', index - 1).name;
     const nTypes = r.varint();
     for (let t = 0; t < nTypes; t++) {
       const code = r.byte();
-      const kind = PHYSICS_KEY_TYPES[code];
+      const kind = (r.v42 ? PHYSICS_KEY_TYPES_42 : PHYSICS_KEY_TYPES)[code];
       if (!kind) throw new Unsupported(`Physics key type ${code}`);
       const frames = r.varint();
+      if (kind === 'reset') {
+        const keys = [];
+        for (let f = 0; f < frames; f++) {
+          const time = r.float();
+          keys.push(time ? { time } : {});
+        }
+        ((anim.physics ??= {})[name] ??= {}).reset = keys;
+        continue;
+      }
       r.varint(); // bezier count
       ((anim.physics ??= {})[name] ??= {})[kind] = readCurveKeys(r, frames, (rr, key) => {
         const v = rr.float();
@@ -592,14 +640,21 @@ function readPhysics(r, name, out) {
     const v = r.float();
     if (v !== PHYSICS_DEFAULTS[key]) c[key] = v;
   }
-  // Mass is stored as its inverse.
-  if (flags & PHYSICS_MASS) c.mass = shortestFloat(Math.fround(1 / r.float()));
+  // 4.3 stores the mass here as its inverse; 4.2 stores the mix here and the mass (plain) after the
+  // globals, each with the 0x80 flag of its byte.
+  if (flags & PHYSICS_MASS) {
+    if (r.v42) c.mix = r.float();
+    else c.mass = shortestFloat(Math.fround(1 / r.float()));
+  }
   const wind = r.float();
   const gravity = r.float();
   if (wind) c.wind = wind;
   if (gravity) c.gravity = gravity;
   const globals = r.byte();
-  if (globals & 0x80) throw new Unsupported(`Physics constraint options (0x${globals.toString(16)}) on '${name}'`);
+  if (globals & 0x80) {
+    if (!r.v42) throw new Unsupported(`Physics constraint options (0x${globals.toString(16)}) on '${name}'`);
+    c.mass = r.float();
+  }
   PHYSICS_GLOBALS.forEach((key, i) => {
     if (globals & (1 << i)) c[`${key}Global`] = true;
   });
@@ -668,7 +723,7 @@ function readVertices(r, a, weighted) {
   a.vertexCount = count;
   a.vertices = [];
   if (weighted) {
-    r.varint(); // size hint
+    if (!r.v42) r.varint(); // size hint
     for (let v = 0; v < count; v++) {
       const n = r.varint();
       a.vertices.push(n);
@@ -764,7 +819,7 @@ function readAttachment(r, flags, key, nonessential) {
   const count = r.varint();
   a.vertices = [];
   if (flags & FLAG_WEIGHTED) {
-    r.varint(); // size hint: bone counts + bone indices
+    if (!r.v42) r.varint(); // size hint: bone counts + bone indices
     for (let v = 0; v < count; v++) {
       const n = r.varint();
       a.vertices.push(n);
@@ -777,7 +832,7 @@ function readAttachment(r, flags, key, nonessential) {
   for (let k = 0; k < count * 2; k++) a.uvs.push(r.float());
   a.triangles = [];
   for (let k = 0; k < 3 * (2 * count - a.hull - 2); k++) a.triangles.push(r.varint());
-  if (r.byte() !== 0) throw new Unsupported(`Mesh options ('${key}')`); // always 0 so far
+  if (!r.v42 && r.byte() !== 0) throw new Unsupported(`Mesh options ('${key}')`); // always 0 so far
   if (nonessential) {
     const ne = r.varint();
     a.edges = [];
@@ -935,6 +990,15 @@ function readAnimation(r, out, eventNames) {
       const type = r.byte();
       const frames = r.varint();
       r.varint(); // bezier count
+      if (type === BONE_INHERIT_42 && r.v42) {
+        timelines.inherit = [];
+        for (let f = 0; f < frames; f++) {
+          const time = r.float();
+          const inherit = INHERIT[r.byte()] ?? 'normal';
+          timelines.inherit.push({ ...(time ? { time } : {}), ...(inherit !== 'normal' ? { inherit } : {}) });
+        }
+        continue;
+      }
       const spec = BONE_TIMELINES[type];
       if (!spec) throw new Unsupported(`Bone timeline type ${type}`);
       const [kind, count] = spec;
@@ -955,7 +1019,7 @@ function readAnimation(r, out, eventNames) {
   }
   const nIk = r.varint();
   for (let i = 0; i < nIk; i++) {
-    const constraint = out.constraints[r.varint()].name;
+    const constraint = constraint42(r, out, 'ik', r.varint()).name;
     const frames = r.varint();
     r.varint(); // bezier count
     const keys = ((anim.ik ??= {})[constraint] = []);
@@ -983,7 +1047,7 @@ function readAnimation(r, out, eventNames) {
   }
   const nTransform = r.varint();
   for (let i = 0; i < nTransform; i++) {
-    const constraint = out.constraints[r.varint()].name;
+    const constraint = constraint42(r, out, 'transform', r.varint()).name;
     const frames = r.varint();
     r.varint(); // bezier count
     const mapped = r.transformMapped?.get(constraint) ?? new Set(TRANSFORM_PROPERTIES);
@@ -995,7 +1059,7 @@ function readAnimation(r, out, eventNames) {
       return TRANSFORM_KEY_MIXES.length;
     });
   }
-  for (let s = 0; s < UNKNOWN_ANIMATION_SECTIONS; s++) {
+  for (let s = 0; s < (r.v42 ? 2 : UNKNOWN_ANIMATION_SECTIONS); s++) {
     if (s === ANIMATION_SECTION_PATH) readPathKeys(r, out, anim);
     else if (s === ANIMATION_SECTION_PHYSICS) readPhysicsKeys(r, out, anim);
     else readSliderKeys(r, out, anim);
@@ -1034,7 +1098,7 @@ function readAnimation(r, out, eventNames) {
     for (let k = 0; k < n; k++) key.offsets.push({ slot: out.slots[r.varint()].name, offset: r.varint() | 0 });
     (anim.drawOrder ??= []).push(key);
   }
-  if (r.varint() !== 0) throw new Unsupported('An unknown animation section');
+  if (!r.v42 && r.varint() !== 0) throw new Unsupported('An unknown animation section');
   const nEvents = r.varint();
   for (let i = 0; i < nEvents; i++) {
     const time = r.float();
@@ -1051,9 +1115,75 @@ function readAnimation(r, out, eventNames) {
     }
     (anim.events ??= []).push(key);
   }
-  const color = r.color();
-  if (color !== 'ffffffff') anim._color = color;
+  if (!r.v42) {
+    const color = r.color();
+    if (color !== 'ffffffff') anim._color = color;
+  }
   return anim;
+}
+
+// ---- format 4.2 -------------------------------------------------------------------------------
+
+/** The 4.2 constraint lists, in file order; animations and skins index each list on its own. */
+const CONSTRAINT_LISTS_42 = ['ik', 'transform', 'path', 'physics'];
+/** Transform constraint flags (4.2): local, relative, then which offsets are present. */
+const TRANSFORM_FLAGS_42 = [['rotation', 0x08], ['x', 0x10], ['y', 0x20], ['scaleX', 0x40], ['scaleY', 0x80]];
+const BONE_INHERIT_42 = 10;
+
+/** The constraint a 4.2 (typed list) or 4.3 (unified list) index names. */
+function constraint42(r, out, type, index) {
+  const c = r.v42 ? out[type]?.[index] : out.constraints[index];
+  if (!c) throw new Error('invalid constraint index in .skel data');
+  return c;
+}
+
+/**
+ * The four 4.2 constraint lists: IK, transform, path, physics. Each entry starts with its name and
+ * application order; the rest matches the 4.3 encoding except transform constraints, which keep
+ * 4.2's offsets and six mixes (a flag bit per non-zero value).
+ */
+function readConstraints42(r, out) {
+  const bones = () => {
+    const list = [];
+    const n = r.varint();
+    for (let k = 0; k < n; k++) list.push(out.bones[r.varint()].name);
+    return list;
+  };
+  for (const type of CONSTRAINT_LISTS_42) {
+    out[type] = [];
+    const n = r.varint();
+    for (let i = 0; i < n; i++) {
+      const name = r.string();
+      const order = r.varint();
+      let c;
+      if (type === 'physics') c = readPhysics(r, name, out);
+      else {
+        const list = bones();
+        c = type === 'ik' ? readIk(r, name, list, out) : type === 'path' ? readPath(r, name, list, out) : readTransform42(r, name, list, out);
+      }
+      delete c.type;
+      out[type].push({ name, order, ...c });
+    }
+    if (!out[type].length) delete out[type];
+  }
+}
+
+function readTransform42(r, name, bones, out) {
+  const c = { type: 'transform', name, bones, target: out.bones[r.varint()].name };
+  const flags = r.byte();
+  if (flags & 0x01) c.skin = true;
+  if (flags & 0x02) c.local = true;
+  if (flags & 0x04) c.relative = true;
+  for (const [key, bit] of TRANSFORM_FLAGS_42) if (flags & bit) c[key] = r.float();
+  const mixes = r.byte();
+  if (mixes & 0x01) c.shearY = r.float();
+  if (mixes & 0x80) throw new Unsupported(`Transform constraint options (0x${mixes.toString(16)}) on '${name}'`);
+  // A clear bit is a mix of 0; JSON leaves out the default of 1.
+  TRANSFORM_MIXES.forEach(([key], i) => {
+    const v = mixes & (0x02 << i) ? r.float() : 0;
+    if (v !== 1) c[key] = v;
+  });
+  return c;
 }
 
 // ---- writing ----------------------------------------------------------------------------------

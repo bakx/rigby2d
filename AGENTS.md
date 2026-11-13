@@ -17,6 +17,9 @@ they do not change an already-open editor document. Reload that document after e
   Hints may also be stored in `<PSD basename>.joints.json`, as that object or its inner map, or
   drawn as small PSD layers named `joint:shoulder_l` or `@shoulder_l` (the layer's centre is the
   joint; these layers are not imported as art). Arguments beat the sidecar, which beats layers. The core `autoRig` function takes **world** points.
+- `.skel` files of format 4.2 and 4.3 open; `.skel` exports are written as 4.3. A 4.2 rig whose IK
+  uses compress/stretch/uniform/softness or whose physics sets a mix cannot be written as `.skel`
+  yet (`validate_project` reports `binaryExport`); export it as skeleton JSON instead.
 - Every MCP input/output must be under a configured workspace root. Output folders must exist.
   A `.rigby` work file is a ZIP containing `project.json`, `images/*.png`, and optional audio
   and actor files. Use the tools rather than hand-editing the archive.

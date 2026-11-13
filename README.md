@@ -119,7 +119,7 @@ runtimes and the MCP server. The pages are also in [`docs/`](docs/).
   [Coming from DragonBones](https://rigby2d.com/docs/migrating-from-dragonbones.html).
 - **Python scripting** and custom tools, and a built-in **MCP server** so AI assistants such as
   Claude can inspect, rig and animate your projects.
-- **Lossless skeleton JSON (3.8, 4.2, 4.3) and binary `.skel`** with texture atlases, played by the
+- **Lossless skeleton JSON (3.8, 4.2, 4.3) and binary `.skel`** (reads 4.2 and 4.3, writes 4.3) with texture atlases, played by the
   **JavaScript, Phaser, PixiJS, Rust, C++ (Defold), Unity, Godot and Cocos Creator runtimes**.
 - **Sprite sheets** for engines that play frames: packed with TexturePacker/Aseprite-style JSON, a
   Defold atlas, or PNG frames, with loops that join up (also from the MCP server).

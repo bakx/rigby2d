@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | `.rigby` | The work file: a ZIP with `project.json` (the whole document) and `images/*.png`, plus `audio/*` for audio tracks. | *File ▸ Save* |
 | `.json` | Skeleton JSON, format 3.8, 4.2 or 4.3. | *Export ▸ JSON + atlas* |
-| `.skel` | Binary skeleton, format 4.3. | *Export ▸ Binary .skel + atlas* |
+| `.skel` | Binary skeleton, format 4.3; files of format 4.2 open too (exports are always 4.3). | *Export ▸ Binary .skel + atlas* |
 | `.atlas` + `.png` / `.webp` / `.ktx2` | Texture atlas: the packed images and where each one sits. Pages are PNG (default), WebP, or KTX2 (Basis Universal ETC1S or UASTC, GPU-compressed; see [Export](export.md#texture-pages)). | Every export |
 | `.scene.json` | A scene for runtimes: actors, clips and depths, naming the stage and character skeletons next to it. | *Export ▸ Scene for runtimes* |
 

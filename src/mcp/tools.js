@@ -198,6 +198,8 @@ useBasis(async () => {
   return (await import(glue.href)).default({ print() {}, printErr() {} });
 });
 
+const isKtx2Name = (name) => /\.ktx2$/i.test(name);
+
 /** Decodes an atlas page file (PNG, KTX2, WebP or JPG) to { width, height, data, pma? }. */
 export async function readPage(file) {
   const bytes = await fs.readFile(file);
@@ -415,7 +417,10 @@ async function validate(p) {
     for (const page of p.atlas.pages) {
       try {
         const tex = await readPage(path.join(path.dirname(p.file), page.name));
-        if (page.width && page.height && (tex.width !== page.width || tex.height !== page.height)) throw new Error(`is ${tex.width}×${tex.height}, the atlas says ${page.width}×${page.height}`);
+        // KTX2 encoders pad a page to whole 4×4 blocks; the atlas keeps the unpadded size.
+        const slack = isKtx2Name(page.name) ? 3 : 0;
+        const fits = (have, want) => have >= want && have <= want + slack;
+        if (page.width && page.height && !(fits(tex.width, page.width) && fits(tex.height, page.height))) throw new Error(`is ${tex.width}×${tex.height}, the atlas says ${page.width}×${page.height}`);
       } catch (e) {
         pages = 'failed';
         errors.push(`Atlas page ${page.name}: ${e.code === 'ENOENT' ? 'the file is missing' : e.message}.`);
