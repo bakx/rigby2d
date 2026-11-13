@@ -12,7 +12,8 @@ import { writeSceneManifest } from '../core/scene.js';
 import { Pose } from '../core/pose.js';
 import { Skeleton, makeAttachment, makeSlot, uniqueName } from '../core/model.js';
 import { packAtlas, usedImages } from '../core/pack.js';
-import { decodeKtx2, encodeKtx2, isKtx2, useBasis } from '../core/ktx2.js';
+import { isKtx2 } from '../core/ktx2.js';
+import { decodeKtx2, encodeKtx2 } from './ktx2.js';
 import { unzip, zip } from './zip.js';
 import { dragonBonesToSkeleton, isDragonBones, isDragonBonesAtlas } from './dragonbones.js';
 import { alphaBounds, backToFront, fileName, isLayerSet, layerCenter, layerName, pixelArtScale } from './pngset.js';
@@ -51,13 +52,6 @@ export function joinPath(dir, rel) {
 }
 
 // ---- image coding -----------------------------------------------------------------------------
-
-// The Basis Universal module (ktx2-encoder's build: encoder and transcoder) loads on first use from
-// the editor's own files; vite.config.js serves and bundles basis/basis_encoder.wasm.
-useBasis(async () => {
-  const { BrowserBasisEncoder } = await import('ktx2-encoder');
-  return new BrowserBasisEncoder().init({ wasmUrl: new URL(`${import.meta.env.BASE_URL}basis/basis_encoder.wasm`, location.href).href });
-});
 
 /** RGBA pixels { width, height, data } drawn onto a new canvas. */
 function canvasOf({ width, height, data }) {
