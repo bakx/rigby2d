@@ -29,6 +29,23 @@ The Whisper speech model is not distributed with Rigby2D: the editor downloads i
 (`onnx-community/whisper-base_timestamped`) the first time it is used. Whisper is by OpenAI, MIT
 License: <https://github.com/openai/whisper>.
 
+## KTX2 textures (Basis Universal)
+
+The editor and the MCP server read and write KTX2 atlas pages with the Basis Universal encoder and
+transcoder compiled to WebAssembly (`basis/basis_encoder.wasm` in the editor build, `node_modules/ktx2-encoder`
+in the MCP bundle), from the [`ktx2-encoder`](https://www.npmjs.com/package/ktx2-encoder) npm package
+(MIT License, Copyright (c) Hu Song).
+
+- **Basis Universal**: Apache License 2.0, Copyright (c) 2016-2026 Binomial LLC. Source:
+  <https://github.com/BinomialLLC/basis_universal>. License text:
+  <https://www.apache.org/licenses/LICENSE-2.0>. "Basis Universal" is a trademark of Binomial LLC.
+  The build links **Zstandard** (BSD-3-Clause, Copyright (c) Meta Platforms, Inc.) and the MIT-licensed
+  tinyexr, tiny_dds and QOI loaders; see the LICENSES folder of the Basis Universal repository.
+- **ktx-parse** (used by ktx2-encoder): MIT License. Source: <https://github.com/donmccurdy/KTX-Parse>.
+
+Game runtimes transcode KTX2 pages with Basis Universal's own `basis_transcoder.js`, which is not
+distributed with Rigby2D: download it from the repository above.
+
 ## Icons
 
 The editor's dialogs and the website use icons from:

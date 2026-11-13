@@ -67,11 +67,11 @@ export function pack(items, { padding = 2, maxSize = 8192, powerOfTwo = true } =
  * Packs the images `doc` uses into atlas pages. `pixels(name)` returns { width, height, data } (RGBA,
  * straight alpha) or null for a missing image. Region names are the image names, which skeleton JSON
  * writes as the attachment `path`. Returns { pages: [{ name, width, height, data, regions }], atlas (the
- * .atlas text), missing (image names) }. Pages are `<name>.png`, `<name>_2.png`, … `scale` resamples
+ * .atlas text), missing (image names) }. Pages are `<name>.<ext>`, `<name>_2.<ext>`, … `scale` resamples
  * the images and writes the atlas `scale` line, so the skeleton itself is unchanged; `trim` crops each
  * region to its alpha bounds and writes offsets, so placement does not change; `pma` premultiplies.
  */
-export function packAtlas(doc, pixels, { name, filter = ['Linear', 'Linear'], padding = 2, maxSize = 4096, powerOfTwo = false, pma = false, trim = false, scale = 1 } = {}) {
+export function packAtlas(doc, pixels, { name, filter = ['Linear', 'Linear'], padding = 2, maxSize = 4096, powerOfTwo = false, pma = false, trim = false, scale = 1, ext = 'png' } = {}) {
   const missing = [], items = [];
   for (const image of usedImages(doc)) {
     let img = pixels(image);
@@ -94,7 +94,7 @@ export function packAtlas(doc, pixels, { name, filter = ['Linear', 'Linear'], pa
       return { ...r, rotate: 0, index: -1, offsetX: it.offset[0], offsetY: it.offset[1], originalWidth: it.original.width, originalHeight: it.original.height };
     });
     if (pma) premultiply(data);
-    return { name: i ? `${name}_${i + 1}.png` : `${name}.png`, width: page.width, height: page.height, data, regions };
+    return { name: i ? `${name}_${i + 1}.${ext}` : `${name}.${ext}`, width: page.width, height: page.height, data, regions };
   });
   const atlas = writeAtlas(pages.map((p) => ({ name: p.name, width: p.width, height: p.height, filter, pma, scale: scale !== 1 ? scale : undefined, regions: p.regions })));
   return { pages, atlas, missing };

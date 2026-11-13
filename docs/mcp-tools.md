@@ -108,7 +108,7 @@ Evaluate the skeleton with the Rigby2D runtime: the setup pose, or an animation 
 
 ### `validate_project`
 
-Check a project for problems: structure, images missing from its work file, atlas or images folder, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. *Read only.*
+Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas pages (PNG, WebP or KTX2) that are missing or not the size the atlas says, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. *Read only.*
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ Check a project for problems: structure, images missing from its work file, atla
 
 ### `convert_project`
 
-Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.
+Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -132,6 +132,12 @@ Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3).
 | `power_of_two` | boolean | Round page sizes up to powers of two (default false). |
 | `scale` | number | Resample the images by this factor and write the atlas scale line; the skeleton is unchanged (default 1). |
 | `trim` | boolean | Crop each region to its alpha bounds and write offsets, so placement does not change (default false). |
+| `texture_format` | `'png'`, `'webp'`, `'ktx2'` | Page file format (default png). webp needs FFmpeg on PATH (lossless). ktx2 is Basis Universal, which runtimes transcode to the GPU format at hand; pair it with pma: true. |
+| `codec` | `'etc1s'`, `'uastc'` | KTX2 codec: etc1s is smallest (lossy, banding on gradients), uastc is near lossless and about 4× larger (default etc1s). |
+| `quality` | integer | KTX2 quality: ETC1S quality level, or the UASTC effort when scaled to 0-4 (default 128). |
+| `mipmaps` | boolean | Store a mip chain in the KTX2 pages (default false; atlases drawn at 1:1 need none). |
+| `zstd` | boolean | Zstandard-supercompress UASTC KTX2 pages (default true; ETC1S has its own compression). |
+| `fallback` | `'png'`, `'webp'`, `'none'` | With ktx2, also write every page as PNG or WebP under the same name, for runtimes without a transcoder (default none). |
 
 ### `export_defold_model`
 

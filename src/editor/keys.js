@@ -6,6 +6,7 @@
 import { REPEATING, actionFor, actionsFor, comboOf } from './keymap.js';
 import * as edit from './edit.js';
 import { t } from './i18n.js';
+import { openExportDialog } from './exportui.js';
 
 // Actions that act on the focused window's own view state (the copy/paste clipboard and its
 // on-canvas preview), not on the shared document. A detached window runs these locally — so its
@@ -84,7 +85,7 @@ export function runAction(app, action, ctx) {
     'file.open': () => app.openDialog(),
     'file.save': () => app.save(false),
     'file.saveAs': () => app.save(true),
-    'file.export': () => app.exportSkeletonJson(app.saveVersion()),
+    'file.export': () => openExportDialog(app, 'json', app.saveVersion()),
     'menu.close': () => closeMenu?.(),
     'app.preferences': () => ctx.openPreferences?.(),
   };

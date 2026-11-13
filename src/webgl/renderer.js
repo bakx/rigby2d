@@ -94,7 +94,11 @@ export class WebGLRenderer {
     this.drawing = false;
   }
 
-  /** Uploads an image (img, canvas, ImageBitmap…) as a texture. */
+  /**
+   * Uploads an image as a texture: a DOM image (img, canvas, ImageBitmap…), RGBA pixels
+   * { width, height, data }, or a transcoded KTX2 page { width, height, data, glFormat } (webgl/ktx2.js),
+   * which goes up compressed.
+   */
   createTexture(image, { pma = false, linear = true, mipmaps = false } = {}) {
     const gl = this.gl;
     const texture = gl.createTexture();
@@ -105,13 +109,17 @@ export class WebGLRenderer {
     const premultiply = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    const compressed = image.glFormat != null;
+    if (compressed) gl.compressedTexImage2D(gl.TEXTURE_2D, 0, image.glFormat, image.width, image.height, 0, image.data);
+    else if (image.data && !(globalThis.ImageData && image instanceof ImageData)) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, image.width, image.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiply);
     const filter = linear ? gl.LINEAR : gl.NEAREST;
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     const pow2 = (n) => (n & (n - 1)) === 0;
-    const canMip = mipmaps && (gl instanceof (globalThis.WebGL2RenderingContext ?? Object) || (pow2(image.width) && pow2(image.height)));
+    // shortcut: a KTX2 page's own mip levels are not uploaded (atlases draw at 1:1), add them when a runtime scales pages down
+    const canMip = mipmaps && !compressed && (gl instanceof (globalThis.WebGL2RenderingContext ?? Object) || (pow2(image.width) && pow2(image.height)));
     if (canMip) gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, canMip ? gl.LINEAR_MIPMAP_LINEAR : filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

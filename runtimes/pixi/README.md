@@ -59,7 +59,7 @@ share it and its textures, so a crowd costs one load.
 
 | Function | What it does |
 | --- | --- |
-| `loadRigby(skeletonUrl, atlasUrl)` | Loads a `.skel` or `.json`, its `.atlas` and the atlas pages (through `PIXI.Assets`, with each page's filter and premultiplied alpha). Returns a promise of `RigbyData`; loading the same pair again gives the same data. |
+| `loadRigby(skeletonUrl, atlasUrl, { ktx2 })` | Loads a `.skel` or `.json`, its `.atlas` and the atlas pages (through `PIXI.Assets`, with each page's filter and premultiplied alpha). Returns a promise of `RigbyData`; loading the same pair again gives the same data. `.ktx2` pages (Basis Universal) need `ktx2`: the module from `basis_transcoder.js` (`BASIS()`, or a function returning it), served next to your game; they are transcoded to ASTC, BC7 or ETC2 as the renderer supports and uploaded compressed (export them with premultiplied alpha). Without `ktx2`, a `.png` or `.webp` page of the same name is loaded instead. |
 | `parseRigby(skeleton, atlasText, textures)` | The same from memory: `.skel` bytes, JSON text or parsed JSON, the atlas text, and the page textures (page name → `Texture`, as a `Map`, an object or a function). For your own loaders and bundlers. |
 
 `RigbyData` has `skeleton`, `atlas`, `pages`, `animationNames` and `skinNames`.

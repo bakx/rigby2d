@@ -12,6 +12,7 @@ import { icon } from './icons.js';
 import { installKeyboard, isTyping, runAction } from './keys.js';
 import { openRenderDialog } from './renderui.js';
 import { openSpriteSheetDialog } from './spritesheetui.js';
+import { openExportDialog } from './exportui.js';
 import { openShareDialog } from './shareui.js';
 import { installNudges } from './nudgeui.js';
 import { openAutoRig, openRetarget } from './rigui.js';
@@ -139,14 +140,14 @@ function menus() {
       ...(has(app, 'render') ? [{ label: t('Render animation…'), title: t('PNG sequence, WebM or MP4'), action: () => openRenderDialog(app) }] : []),
       { label: t('Share to Discord…'), title: t('Render a GIF or MP4 and post it to the community'), action: () => openShareDialog(app) },
       submenuItem(t('Export'), [
-        { label: t('JSON + atlas…'), shortcut: t('Ctrl+E'), action: () => app.exportSkeletonJson(app.saveVersion()) },
-        { label: t('Binary .skel + atlas (4.3)…'), action: () => app.exportSkeletonBinary() },
+        { label: t('JSON + atlas…'), shortcut: t('Ctrl+E'), action: () => openExportDialog(app, 'json', app.saveVersion()) },
+        { label: t('Binary .skel + atlas (4.3)…'), action: () => openExportDialog(app, 'skel') },
         { label: t('Defold model…'), title: t('A Rigby2D model component for Defold: the Defold editor plays it live, and the game plays it natively'), action: () => app.exportDefold() },
         ...(app.doc.scene ? [] : [{ label: t('Sprite sheet…'), title: t('Animations as frames: a packed sheet with JSON, a Defold atlas, or PNG frames'), action: () => openSpriteSheetDialog(app) }]),
         'separator',
-        { label: t('JSON format 3.8…'), action: () => app.exportSkeletonJson('3.8') },
-        { label: t('JSON format 4.2…'), action: () => app.exportSkeletonJson('4.2') },
-        { label: t('JSON format 4.3…'), action: () => app.exportSkeletonJson('4.3') },
+        { label: t('JSON format 3.8…'), action: () => openExportDialog(app, 'json', '3.8') },
+        { label: t('JSON format 4.2…'), action: () => openExportDialog(app, 'json', '4.2') },
+        { label: t('JSON format 4.3…'), action: () => openExportDialog(app, 'json', '4.3') },
         ...(app.doc.scene ? ['separator', { label: t('Scene for runtimes…'), title: t('The stage, every character and their clips, for the JavaScript, Rust and Godot runtimes'), action: () => app.exportScene() }] : []),
       ]),
       { label: t('Get runtimes…'), title: t('Unity, Godot, Defold, Cocos Creator, Phaser, JavaScript and Rust runtimes for this version'), action: () => openRuntimes(app) },

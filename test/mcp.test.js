@@ -135,7 +135,7 @@ test('mcp tools: validate finds no problems in the shipped files and reports mis
     const report = await tools.validate_project({ path: p });
     assert.equal(report.valid, true, p);
     assert.deepEqual(report.warnings, [], p);
-    assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
+    assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', pages: p === RIGBY ? 'not checked' : 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
   }
   // Without its atlas the images cannot be checked; with an atlas missing a region they are missing.
   const lone = path.join(tmp, 'lone.json');
@@ -145,7 +145,9 @@ test('mcp tools: validate finds no problems in the shipped files and reports mis
   await fs.writeFile(path.join(tmp, 'lone.atlas'), atlas.replace(/^hand_e$/m, 'hand_x'));
   const report = await tools.validate_project({ path: lone });
   assert.equal(report.valid, false);
-  assert.match(report.errors[0], /1 image\(s\) missing from the atlas lone.atlas: hand_e/);
+  assert.match(report.errors.join('\n'), /1 image\(s\) missing from the atlas lone.atlas: hand_e/);
+  assert.match(report.errors.join('\n'), /Atlas page rigbytron.png: the file is missing/);
+  assert.equal(report.checks.pages, 'failed');
 });
 
 test('mcp tools: convert writes JSON and .skel inside the workspace only', async () => {

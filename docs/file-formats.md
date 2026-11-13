@@ -5,7 +5,7 @@
 | `.rigby` | The work file: a ZIP with `project.json` (the whole document) and `images/*.png`, plus `audio/*` for audio tracks. | *File ▸ Save* |
 | `.json` | Skeleton JSON, format 3.8, 4.2 or 4.3. | *Export ▸ JSON + atlas* |
 | `.skel` | Binary skeleton, format 4.3. | *Export ▸ Binary .skel + atlas* |
-| `.atlas` + `.png` | Texture atlas: the packed images and where each one sits. | Every export |
+| `.atlas` + `.png` / `.webp` / `.ktx2` | Texture atlas: the packed images and where each one sits. Pages are PNG (default), WebP, or KTX2 (Basis Universal ETC1S or UASTC, GPU-compressed; see [Export](export.md#texture-pages)). | Every export |
 | `.scene.json` | A scene for runtimes: actors, clips and depths, naming the stage and character skeletons next to it. | *Export ▸ Scene for runtimes* |
 
 ## The `.rigby` work file
@@ -19,7 +19,9 @@ made again from it.
 
 The interchange formats runtimes load. Bones are listed so parents come first, slots are in draw
 order, attachments live in skins, and animations hold timelines with keys relative to the setup
-pose. Images come from the `.atlas` or from loose files in the skeleton's `images` folder.
+pose. Images come from the `.atlas` or from loose files in the skeleton's `images` folder. Atlas
+pages can be PNG, WebP or KTX2: the editor and the MCP tools decode all three (KTX2 through the
+Basis Universal transcoder), and honour the atlas `pma` line and the KTX2 premultiplied flag.
 
 Rigby2D reads and writes these formats losslessly, for interoperability with your own exported files.
 Support was implemented clean-room from public documentation and observation of exported data.

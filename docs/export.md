@@ -7,15 +7,35 @@ file stays the source; export again whenever it changes.
 
 | Command | Writes |
 | --- | --- |
-| *File ▸ Export ▸ JSON + atlas…* (<kbd>Ctrl</kbd>+<kbd>E</kbd>) | `name.json` in the project's format version, `name.atlas`, `name.png` |
+| *File ▸ Export ▸ JSON + atlas…* (<kbd>Ctrl</kbd>+<kbd>E</kbd>) | `name.json` in the project's format version, `name.atlas`, `name.png` (or `.webp` / `.ktx2`, see [Texture pages](#texture-pages)) |
 | *Export ▸ JSON format 3.8… / 4.2… / 4.3…* | The same, in that skeleton JSON version. |
-| *Export ▸ Binary .skel + atlas (4.3)…* | Binary `name.skel` (smaller, faster to load), `name.atlas`, `name.png` |
+| *Export ▸ Binary .skel + atlas (4.3)…* | Binary `name.skel` (smaller, faster to load), `name.atlas`, `name.png` (or `.webp` / `.ktx2`) |
 | *Export ▸ Defold model…* | A Rigby2D model for [Defold](runtimes.md#defold): `name.rigbyskel`, the images in `images/` with a Defold atlas `name.atlas`, the component `name.rigbymodel` and a game object `name.go`. The Defold editor plays the model live in the scene view. Save into your Defold project: the paths inside come from its `game.project` (the browser editor asks for the folder). |
 | *Export ▸ Sprite sheet…* | Animations rendered as frames: a packed sheet with its data, a Defold atlas with frames, or PNG frames. See [Sprite sheets](#sprite-sheets). |
 | *Export ▸ Scene for runtimes…* (scenes only) | A [scene](scenes.md#in-games-and-apps): `name.scene.json`, plus the stage and each character as skeleton JSON 4.3 with their own atlas |
 
-The images actually used are packed into one atlas page. Its filter follows the project's
-**Textures** setting (`Linear` or, for pixel art, `Nearest`).
+The images actually used are packed into one atlas page (more, `name_2.png`…, past 8192 px). Its
+filter follows the project's **Textures** setting (`Linear` or, for pixel art, `Nearest`).
+
+## Texture pages
+
+The JSON and binary exports open a dialog for the page format first:
+
+| Format | Pages | Notes |
+| --- | --- | --- |
+| **PNG** (default) | `name.png` | Lossless; every runtime reads it. |
+| **WebP** | `name.webp` | Smaller downloads; the browser's encoder (quality 100). Runtimes with WebP image decoding only. |
+| **KTX2** | `name.ktx2` | [Basis Universal](https://github.com/BinomialLLC/basis_universal): the runtime transcodes the page to the GPU's own compressed format (ASTC on mobile, BC7 on desktop, ETC2 elsewhere), so textures take a quarter or less of the video memory of PNG pages and upload without decoding. Options: **codec** ETC1S (smallest, lossy, banding on soft gradients) or UASTC (near lossless, about four times larger); **quality** 1-255; **mipmaps**; **Zstandard supercompression** (UASTC); **fallback pages**, a PNG or WebP copy of every page under the same name for runtimes without a transcoder. |
+
+**Premultiplied alpha** (pma) premultiplies the page pixels and writes `pma: true` to the atlas.
+Use it for KTX2 pages: compressed textures cannot be premultiplied on upload. The MCP tool
+`convert_project` has the same options (`texture_format`, `codec`, `quality`, `mipmaps`, `zstd`,
+`fallback`, `pma`); WebP there needs FFmpeg on PATH.
+
+Limits: KTX2 pages are at most 16384 px a side; the editor and the MCP server read the first mip
+level. Reading KTX2 needs the Basis Universal module (shipped with both); writing it takes a few
+seconds for a 4096 px page, UASTC longer than ETC1S. The Rust, Godot, Unity, Defold and Cocos
+runtimes load pages through their engine's importers: give them PNG pages, or the fallback pages.
 
 ## Sprite sheets
 

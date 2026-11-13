@@ -2,8 +2,10 @@
 // MCP tools over Rigby2D projects: inspect, describe, sample, validate and convert `.rigby` work
 // files and skeleton `.json` / `.skel` exports. Every path is confined to the workspace roots.
 
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import { atlasFilter, parseAtlas } from '../core/atlas.js';
 import { isSkeletonBinary, readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
@@ -13,6 +15,7 @@ import { Skeleton } from '../core/model.js';
 import { Pose } from '../core/pose.js';
 import { atlasLookup, imageLookup } from '../core/draw.js';
 import { packAtlas, usedImages } from '../core/pack.js';
+import { KTX2_DEFAULTS, decodeKtx2, encodeKtx2, isKtx2, useBasis } from '../core/ktx2.js';
 import { unpremultiply } from '../core/rgba.js';
 import { FORMATS as SHEET_FORMATS, buildSpriteSheet } from '../editor/spritesheet.js';
 import { defoldFolderOf, defoldModelFiles, unpackAtlas } from '../editor/defold.js';
@@ -22,7 +25,7 @@ import { sceneSummary } from './scene.js';
 import { decodePng, encodePng } from './png.js';
 import { ToolError } from './protocol.js';
 import { constraintInfo } from '../core/authoring.js';
-import { worldToLocalTool } from './authoring.js';
+import { readImageFile, worldToLocalTool } from './authoring.js';
 import { lintAnimations } from '../core/automation.js';
 import { createRenderingTools } from './rendering.js';
 
@@ -136,8 +139,8 @@ export async function loadProject(file) {
   } catch (e) {
     throw new ToolError(`Cannot read skeleton: ${e.message}`);
   }
-  const { images, imageSource } = await findImages(file, stem, obj, usedImages(read.skeleton));
-  return { file, format: ext === '.json' ? 'json' : 'skel', version: read.skeleton.header?.version ?? null, doc: read.skeleton, warnings: read.warnings, images, imageSource };
+  const { images, imageSource, atlas } = await findImages(file, stem, obj, usedImages(read.skeleton));
+  return { file, format: ext === '.json' ? 'json' : 'skel', version: read.skeleton.header?.version ?? null, doc: read.skeleton, warnings: read.warnings, images, imageSource, atlas };
 }
 
 /**
@@ -153,17 +156,17 @@ async function findImages(file, stem, obj, needed) {
   const want = new Set(needed);
   let best = null;
   for (const name of candidates) {
-    let regions;
+    let regions, atlas;
     try {
-      const atlas = parseAtlas(await fs.readFile(path.join(dir, name), 'utf8'));
+      atlas = parseAtlas(await fs.readFile(path.join(dir, name), 'utf8'));
       regions = atlas.pages.flatMap((p) => p.regions.map((r) => (r.index >= 0 ? `${r.name}${r.index}` : r.name)));
     } catch {
       continue;
     }
     const covered = regions.filter((r) => want.has(r)).length;
-    if (!best || covered > best.covered) best = { name, regions, covered };
+    if (!best || covered > best.covered) best = { name, regions, covered, atlas };
   }
-  if (best) return { images: best.regions, imageSource: `atlas ${best.name}` };
+  if (best) return { images: best.regions, imageSource: `atlas ${best.name}`, atlas: best.atlas };
   const folder = path.join(dir, (obj.skeleton?.images ?? '').trim() || 'images');
   const files = await listImagesRecursive(folder);
   return files ? { images: files, imageSource: `folder ${path.relative(dir, folder) || '.'}` } : { images: null, imageSource: null };
@@ -186,6 +189,34 @@ async function listImagesRecursive(root) {
   return out;
 }
 
+// ---- atlas pages ------------------------------------------------------------------------------
+
+// The Basis Universal encoder and transcoder (ktx2-encoder's build), imported as a file so its progress
+// output can be silenced: the MCP protocol owns stdout.
+useBasis(async () => {
+  const glue = new URL('../basis/basis_encoder.js', import.meta.resolve('ktx2-encoder'));
+  return (await import(glue.href)).default({ print() {}, printErr() {} });
+});
+
+/** Decodes an atlas page file (PNG, KTX2, WebP or JPG) to { width, height, data, pma? }. */
+export async function readPage(file) {
+  const bytes = await fs.readFile(file);
+  if (isKtx2(bytes)) return decodeKtx2(bytes);
+  return /\.(webp|jpe?g)$/i.test(file) ? readImageFile(file) : decodePng(bytes);
+}
+
+/** Encodes a packed page as PNG, WebP (through FFmpeg) or KTX2 bytes. */
+async function encodePage(page, format, ktx2) {
+  if (format === 'png') return encodePng(page);
+  if (format === 'ktx2') return encodeKtx2(page, ktx2);
+  try {
+    const r = await promisify(execFile)('ffmpeg', ['-v', 'error', '-f', 'rawvideo', '-pixel_format', 'rgba', '-video_size', `${page.width}x${page.height}`, '-i', 'pipe:0', '-frames:v', '1', '-f', 'webp', '-lossless', '1', 'pipe:1'], { encoding: 'buffer', input: Buffer.from(page.data.buffer, page.data.byteOffset, page.data.byteLength), maxBuffer: 256 * 1024 * 1024, windowsHide: true });
+    return r.stdout;
+  } catch (e) {
+    throw new ToolError(`WebP pages need FFmpeg on PATH: ${e.message}`);
+  }
+}
+
 // ---- descriptions ---------------------------------------------------------------------------
 
 function timelineCount(anim) {
@@ -205,6 +236,8 @@ function summary(p) {
     name: doc.name,
     workspace: doc.workspace ?? (p.format === 'rigby' ? 'default' : 'game'),
     ...(doc.textureFilter !== 'linear' ? { textureFilter: doc.textureFilter } : {}),
+    ...(p.imageSource ? { images: p.imageSource } : {}),
+    ...(p.atlas ? { atlasPages: p.atlas.pages.map((pg) => ({ file: pg.name, format: path.extname(pg.name).slice(1).toLowerCase(), width: pg.width, height: pg.height, pma: pg.pma, regions: pg.regions.length })) } : {}),
     counts: {
       bones: doc.bones.length,
       slots: doc.slots.length,
@@ -369,12 +402,26 @@ function sameData(a, b) {
   return true;
 }
 
-function validate(p) {
+async function validate(p) {
   const { doc } = p;
   const errors = [];
   const warnings = [...p.warnings];
   const structure = doc.validate();
   if (structure) errors.push(`Structure: ${structure}.`);
+
+  let pages = 'not checked';
+  if (p.atlas) {
+    pages = 'ok';
+    for (const page of p.atlas.pages) {
+      try {
+        const tex = await readPage(path.join(path.dirname(p.file), page.name));
+        if (page.width && page.height && (tex.width !== page.width || tex.height !== page.height)) throw new Error(`is ${tex.width}×${tex.height}, the atlas says ${page.width}×${page.height}`);
+      } catch (e) {
+        pages = 'failed';
+        errors.push(`Atlas page ${page.name}: ${e.code === 'ENOENT' ? 'the file is missing' : e.message}.`);
+      }
+    }
+  }
 
   const needed = usedImages(doc);
   let missingImages = [];
@@ -418,13 +465,13 @@ function validate(p) {
     animationWarnings: lintAnimations(doc),
     errors,
     warnings,
-    checks: { structure: structure ? 'failed' : 'ok', images: p.images ? (missingImages.length ? 'missing' : 'ok') : 'not checked', jsonRoundTrip: roundTrip, binaryExport },
+    checks: { structure: structure ? 'failed' : 'ok', images: p.images ? (missingImages.length ? 'missing' : 'ok') : 'not checked', pages, jsonRoundTrip: roundTrip, binaryExport },
   };
 }
 
 // ---- conversion -------------------------------------------------------------------------------
 
-async function convert(ws, { input, output, version = '4.3', overwrite = false, atlas = false, pma = false, filter, padding = 2, max_size = 4096, power_of_two = false, scale = 1, trim = false }) {
+async function convert(ws, { input, output, version = '4.3', overwrite = false, atlas = false, pma = false, filter, padding = 2, max_size = 4096, power_of_two = false, scale = 1, trim = false, texture_format = 'png', codec = KTX2_DEFAULTS.codec, quality = KTX2_DEFAULTS.quality, mipmaps = KTX2_DEFAULTS.mipmaps, zstd = KTX2_DEFAULTS.zstd, fallback = 'none' }) {
   const source = await ws.existing(input);
   const target = await ws.writable(output);
   if (path.resolve(source) === path.resolve(target)) throw new ToolError('The output must be a different file than the input.');
@@ -458,12 +505,28 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false, 
     const pixel = (n) => { const v = images.get(n); return v ? (v.bytes ? decodePng(v.bytes) : { width: v.width, height: v.height, data: v.rgba }) : null; };
     let packed;
     try {
-      packed = packAtlas(p.doc, pixel, { name: path.basename(stem), filter: filter ? [filter, filter] : atlasFilter(p.doc.textureFilter), padding, maxSize: max_size, powerOfTwo: power_of_two, pma, trim, scale });
+      packed = packAtlas(p.doc, pixel, { name: path.basename(stem), filter: filter ? [filter, filter] : atlasFilter(p.doc.textureFilter), padding, maxSize: max_size, powerOfTwo: power_of_two, pma, trim, scale, ext: texture_format });
     } catch (e) { throw new ToolError(`Atlas packing failed: ${e.message}`); }
-    atlasFiles = [[`${stem}.atlas`, packed.atlas], ...packed.pages.map((pg) => [path.join(dir, pg.name), encodePng(pg)])];
+    // KTX2 pages can come with a PNG or WebP copy of each page (same names) for runtimes without a transcoder.
+    const extra = texture_format === 'ktx2' && fallback !== 'none' ? fallback : null;
+    const fallbackFile = (pg) => path.join(dir, pg.name.replace(/\.ktx2$/, `.${extra}`));
+    atlasFiles = [[`${stem}.atlas`, packed.atlas], ...packed.pages.map((pg) => [path.join(dir, pg.name)]), ...(extra ? packed.pages.map((pg) => [fallbackFile(pg)]) : [])];
     if (!overwrite) for (const [f] of atlasFiles) if (await fs.stat(f).then(() => true, () => false)) throw new ToolError(`${f} already exists. Pass overwrite: true to replace it.`);
+    try {
+      for (const [i, pg] of packed.pages.entries()) {
+        atlasFiles[1 + i][1] = await encodePage(pg, texture_format, { codec, quality, mipmaps, zstd, pma });
+        if (extra) atlasFiles[1 + packed.pages.length + i][1] = await encodePage(pg, extra);
+      }
+    } catch (e) { throw e instanceof ToolError ? e : new ToolError(`Encoding the ${texture_format} pages failed: ${e.message}`); }
     if (packed.missing.length) (warnings ??= []).push(`${packed.missing.length} image(s) not found, left out of the atlas: ${packed.missing.join(', ')}.`);
-    atlasInfo = { file: `${stem}.atlas`, pages: packed.pages.map((pg) => ({ file: path.join(dir, pg.name), width: pg.width, height: pg.height, regions: pg.regions.length })), pma, scale, trim, missingImages: packed.missing };
+    atlasInfo = {
+      file: `${stem}.atlas`,
+      textureFormat: texture_format,
+      ...(texture_format === 'ktx2' ? { ktx2: { codec, quality, mipmaps, zstd } } : {}),
+      pages: packed.pages.map((pg, i) => ({ file: path.join(dir, pg.name), width: pg.width, height: pg.height, regions: pg.regions.length, bytes: atlasFiles[1 + i][1].length })),
+      ...(extra ? { fallback: { format: extra, files: packed.pages.map(fallbackFile), note: 'The same pages as PNG/WebP for runtimes without a KTX2 transcoder: swap the page file extension.' } } : {}),
+      pma, scale, trim, missingImages: packed.missing,
+    };
   }
   await fs.writeFile(target, bytes);
   for (const [f, data] of atlasFiles) await fs.writeFile(f, data);
@@ -475,7 +538,7 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false, 
     bytes: bytes.length,
     warnings,
     atlas: atlasInfo,
-    note: atlasInfo ? 'Skeleton and atlas written.' : 'Only skeleton data is written. Pass atlas: true to pack the images into <name>.atlas and <name>.png next to it.',
+    note: atlasInfo ? 'Skeleton and atlas written.' : 'Only skeleton data is written. Pass atlas: true to pack the images into <name>.atlas and <name>.png (or .webp/.ktx2 with texture_format) next to it.',
   };
 }
 
@@ -492,8 +555,8 @@ export async function projectImages(p, used) {
     const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
     const pages = new Map();
     for (const page of atlas.pages) {
-      const tex = decodePng(await fs.readFile(path.join(dir, page.name)));
-      pages.set(page.name, page.pma ? { ...tex, data: unpremultiply(tex.data) } : tex);
+      const tex = await readPage(path.join(dir, page.name));
+      pages.set(page.name, page.pma || tex.pma ? { ...tex, data: unpremultiply(tex.data) } : tex);
     }
     for (const [n, picture] of unpackAtlas(atlas, pages)) if (used.has(n)) images.set(n, picture);
   } else if (p.imageSource?.startsWith('folder ')) {
@@ -553,6 +616,7 @@ async function defoldModel(ws, { input, output_folder, name, folder, animation =
 /** Image lookup for a loaded project: the work file's images, or the export's atlas or images folder. */
 export async function rasterLookup(p) {
   const decode = (bytes, pma = false) => ({ ...decodePng(bytes), pma });
+  const page = async (file, pma) => { const tex = await readPage(file); return { ...tex, pma: pma || !!tex.pma }; };
   if (p.format === 'rigby') {
     const textures = new Map();
     for (const name of p.images) textures.set(name, decode(p.entries.get(`images/${name}.png`)));
@@ -562,7 +626,7 @@ export async function rasterLookup(p) {
   if (p.imageSource?.startsWith('atlas ')) {
     const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
     const pages = new Map();
-    for (const page of atlas.pages) pages.set(page.name, decode(await fs.readFile(path.join(dir, page.name)), page.pma));
+    for (const pg of atlas.pages) pages.set(pg.name, await page(path.join(dir, pg.name), pg.pma));
     return atlasLookup(atlas, (page) => pages.get(page.name));
   }
   if (p.imageSource?.startsWith('folder ')) {
@@ -689,7 +753,7 @@ export function createTools(ws) {
     {
       name: 'validate_project',
       title: 'Validate project',
-      description: 'Check a project for problems: structure, images missing from its work file, atlas or images folder, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible.',
+      description: 'Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas pages (PNG, WebP or KTX2) that are missing or not the size the atlas says, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible.',
       inputSchema: { type: 'object', properties: { path: PATH }, required: ['path'], additionalProperties: false },
       annotations: READ_ONLY,
       handler: async ({ path: p }) => validate(await load(p)),
@@ -697,7 +761,7 @@ export function createTools(ws) {
     {
       name: 'convert_project',
       title: 'Convert project',
-      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.',
+      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -713,6 +777,12 @@ export function createTools(ws) {
           power_of_two: { type: 'boolean', description: 'Round page sizes up to powers of two (default false).' },
           scale: { type: 'number', exclusiveMinimum: 0, maximum: 4, description: 'Resample the images by this factor and write the atlas scale line; the skeleton is unchanged (default 1).' },
           trim: { type: 'boolean', description: 'Crop each region to its alpha bounds and write offsets, so placement does not change (default false).' },
+          texture_format: { type: 'string', enum: ['png', 'webp', 'ktx2'], description: 'Page file format (default png). webp needs FFmpeg on PATH (lossless). ktx2 is Basis Universal, which runtimes transcode to the GPU format at hand; pair it with pma: true.' },
+          codec: { type: 'string', enum: ['etc1s', 'uastc'], description: 'KTX2 codec: etc1s is smallest (lossy, banding on gradients), uastc is near lossless and about 4× larger (default etc1s).' },
+          quality: { type: 'integer', minimum: 1, maximum: 255, description: 'KTX2 quality: ETC1S quality level, or the UASTC effort when scaled to 0-4 (default 128).' },
+          mipmaps: { type: 'boolean', description: 'Store a mip chain in the KTX2 pages (default false; atlases drawn at 1:1 need none).' },
+          zstd: { type: 'boolean', description: 'Zstandard-supercompress UASTC KTX2 pages (default true; ETC1S has its own compression).' },
+          fallback: { type: 'string', enum: ['png', 'webp', 'none'], description: 'With ktx2, also write every page as PNG or WebP under the same name, for runtimes without a transcoder (default none).' },
         },
         required: ['input', 'output'],
         additionalProperties: false,

@@ -20,6 +20,7 @@ import { readSkeletonJson } from '../../src/core/interop.js';
 import { Affine } from '../../src/core/math.js';
 import { Pose } from '../../src/core/pose.js';
 import { AnimationState } from '../../src/core/state.js';
+import { TRANSCODE, transcodeKtx2, useBasis } from '../../src/core/ktx2.js';
 
 /** Slot blend modes -> PixiJS blend modes (all four are PixiJS's own, batchable ones). */
 export const BLEND_MODES = { normal: 'normal', additive: 'add', multiply: 'multiply', screen: 'screen' };
@@ -68,6 +69,21 @@ class Buf {
 export function rigbyPixi(PIXI = globalThis.PIXI, { wasm = null } = {}) {
   if (!PIXI?.Mesh || !PIXI?.MeshGeometry || !PIXI?.Container) throw new Error('Rigby2D: pass the PixiJS namespace (PixiJS 8): rigbyPixi(PIXI)');
   const { Assets, Container, DOMAdapter, Mesh, MeshGeometry, Shader, Texture, Ticker } = PIXI;
+
+  /**
+   * A .ktx2 page as a texture: transcoded to a compressed format this renderer takes (ASTC, BC7,
+   * ETC2), else to RGBA. Compressed blocks cannot be premultiplied on upload, so export KTX2 pages
+   * with pma; straight ones blend as such.
+   */
+  async function ktx2Texture(bytes, page, nearest) {
+    const supported = (await PIXI.getSupportedCompressedTextureFormats?.()) ?? [];
+    const [pixiFormat, format] = supported.includes('astc-4x4-unorm') ? ['astc-4x4-unorm', TRANSCODE.astc] : supported.includes('bc7-rgba-unorm') ? ['bc7-rgba-unorm', TRANSCODE.bc7] : supported.includes('etc2-rgba8unorm') ? ['etc2-rgba8unorm', TRANSCODE.etc2] : ['rgba8unorm', TRANSCODE.rgba];
+    const t = await transcodeKtx2(bytes, format);
+    const rgba = format === TRANSCODE.rgba;
+    const options = { width: t.width, height: t.height, alphaMode: page.pma || t.pma ? 'premultiplied-alpha' : rgba ? 'premultiply-alpha-on-upload' : 'no-premultiply-alpha', scaleMode: nearest ? 'nearest' : 'linear' };
+    const source = rgba ? new PIXI.BufferImageSource({ resource: t.data, format: 'rgba8unorm', ...options }) : new PIXI.CompressedSource({ resource: [t.data], format: pixiFormat, ...options });
+    return new Texture({ source });
+  }
 
   /**
    * Loaded skeleton data, shared by every RigbySkeleton made from it: the skeleton, its atlas and a
@@ -124,9 +140,12 @@ export function rigbyPixi(PIXI = globalThis.PIXI, { wasm = null } = {}) {
 
   /**
    * Loads a skeleton (.skel or .json), its .atlas and the atlas pages (through PixiJS Assets, from
-   * the atlas's folder). Loading the same pair again returns the same RigbyData.
+   * the atlas's folder). Loading the same pair again returns the same RigbyData. For .ktx2 pages pass
+   * `ktx2`: the Basis Universal transcoder module (the promise of `BASIS()` from basis_transcoder.js,
+   * or a function returning it); without one, the page's .png or .webp fallback of the same name is tried.
    */
-  function loadRigby(skeletonUrl, atlasUrl) {
+  function loadRigby(skeletonUrl, atlasUrl, { ktx2 = null } = {}) {
+    if (ktx2) useBasis(typeof ktx2 === 'function' ? ktx2 : () => ktx2);
     const key = `${skeletonUrl}\n${atlasUrl}`;
     if (!cache.has(key)) {
       const promise = (async () => {
@@ -142,8 +161,17 @@ export function rigbyPixi(PIXI = globalThis.PIXI, { wasm = null } = {}) {
         await Promise.all(
           atlas.pages.map(async (page) => {
             const nearest = (page.filter?.[1] ?? page.filter?.[0] ?? 'Linear').toLowerCase().startsWith('nearest');
+            const pageUrl = (name) => new URL(name, new URL(folderOf(atlasUrl) || './', globalThis.location?.href ?? 'http://localhost/')).href;
+            if (/\.ktx2$/i.test(page.name)) {
+              if (ktx2) return void textures.set(page.name, await ktx2Texture(new Uint8Array(await (await get(pageUrl(page.name))).arrayBuffer()), page, nearest));
+              for (const ext of ['png', 'webp']) {
+                const res = await fetcher(pageUrl(page.name.replace(/\.ktx2$/i, `.${ext}`)));
+                if (res.ok) return void textures.set(page.name, await Assets.load({ src: res.url, data: { alphaMode: page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload', scaleMode: nearest ? 'nearest' : 'linear' } }));
+              }
+              throw new Error(`Rigby2D: ${page.name} is a KTX2 texture; pass loadRigby's ktx2 option (the Basis Universal transcoder) or export fallback pages`);
+            }
             const tex = await Assets.load({
-              src: new URL(page.name, new URL(folderOf(atlasUrl) || './', globalThis.location?.href ?? 'http://localhost/')).href,
+              src: pageUrl(page.name),
               data: { alphaMode: page.pma ? 'premultiplied-alpha' : 'premultiply-alpha-on-upload', scaleMode: nearest ? 'nearest' : 'linear' },
             });
             textures.set(page.name, tex);

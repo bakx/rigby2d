@@ -53,7 +53,19 @@ function frame(dt) {
 }
 ```
 
-For `.skel` files use `readSkeletonJson(readSkeletonBinary(bytes), 'hero')`. With another renderer,
+For `.skel` files use `readSkeletonJson(readSkeletonBinary(bytes), 'hero')`. KTX2 pages go up
+compressed: name the Basis Universal transcoder once (`basis_transcoder.js` and its `.wasm` from
+[basis_universal](https://github.com/BinomialLLC/basis_universal), Apache-2.0, served next to your
+game) and let `webgl/ktx2.js` pick ASTC, BC7, ETC2 or RGBA for the context:
+
+```js
+import { ktx2Image, useBasis } from './webgl/ktx2.js';
+useBasis(() => BASIS()); // the factory basis_transcoder.js defines
+const page = await ktx2Image(gl, new Uint8Array(await (await fetch('hero.ktx2')).arrayBuffer()));
+const textures = renderer.atlasTextures(atlas, { 'hero.ktx2': page });
+```
+
+With another renderer,
 draw `pose.quads(skeleton)`: world-space positions (Y up), UVs, tint and blend mode per region and
 mesh. `examples/webgl.html` is a small player (`npm run web:dev`, then open `/examples/webgl.html`).
 
@@ -138,6 +150,11 @@ app.stage.addChild(hero);
 hero.play('run', true, 0.2);                         // crossfade over 0.2 s
 hero.attachToBone('hand_r', sword);                  // any display object follows a bone
 ```
+
+For KTX2 pages pass the Basis Universal transcoder: `loadRigby(skel, atlas, { ktx2: BASIS() })`
+(`basis_transcoder.js` from [basis_universal](https://github.com/BinomialLLC/basis_universal)). The
+page is transcoded to ASTC, BC7 or ETC2 as the renderer supports and uploaded compressed, RGBA
+otherwise; without the option, a `.png` or `.webp` fallback page of the same name is loaded instead.
 
 A `RigbySkeleton` is a PixiJS `Container`. Its attachments are PixiJS meshes that go through
 PixiJS's batcher, so a character is usually one batched mesh, drawn in the same draw calls as your

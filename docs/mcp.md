@@ -23,7 +23,9 @@ or [llms.txt](https://rigby2d.com/llms.txt).
 - Prepare flat AI art with `cutout_image` (background off, fringe un-mixed, polygon masks) and
   `build_psd` (a layered PSD from PNG/JPG/WebP files); `add_attachment` and `replace_image` take
   the same `cutout` options. `convert_project` with `atlas: true` packs the images into
-  `<name>.atlas` and `<name>.png` pages next to the skeleton (`pma`, `trim`, `scale`, `max_size`).
+  `<name>.atlas` and `<name>.png` pages next to the skeleton (`pma`, `trim`, `scale`, `max_size`),
+  or WebP / KTX2 pages with `texture_format` (KTX2: `codec`, `quality`, `mipmaps`, `zstd`, `fallback`).
+  Every tool that reads a project's atlas decodes PNG, WebP and KTX2 pages.
 - Add attachments, replace pixels, and build skins with `add_attachment`, `replace_image`,
   `add_skin`, `set_skin_attachment`, `delete_skin`. `duplicate_attachment` copies an attachment
   under a new name with the same mesh and weights, for a variant that deforms identically.
@@ -236,7 +238,13 @@ structured content and as JSON text.
   is not rig data.
 - **Conversion** writes skeleton data, and with `atlas: true` also packs the images the skeleton
   uses into `<name>.atlas` and `<name>.png` next to it (`pma`, `filter`, `padding`, `max_size`,
-  `power_of_two`, `trim`, `scale`). Without it, keep using the existing `.atlas` and page images.
+  `power_of_two`, `trim`, `scale`). `texture_format: "webp"` (FFmpeg on PATH) or `"ktx2"` writes
+  those pages instead; KTX2 is Basis Universal (`codec` etc1s or uastc, `quality` 1-255, `mipmaps`,
+  `zstd`), pair it with `pma: true`, and `fallback: "png"` adds a PNG copy of every page for
+  runtimes without a transcoder. Without `atlas`, keep using the existing `.atlas` and page images.
+- **Atlas pages** of a `.json` or `.skel` project may be PNG, WebP (FFmpeg) or KTX2: `inspect_project`
+  lists them (`atlasPages`), `validate_project` checks that each exists and has the size the atlas
+  says (`checks.pages`), and the render, sprite sheet and conversion tools decode them.
   `.rigby` work files are written by the editor, which holds the images. Existing output files are
   only replaced with `overwrite: true`.
 

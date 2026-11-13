@@ -35,7 +35,7 @@ they do not change an already-open editor document. Reload that document after e
 | Events | `add_event`, `set_event_key` | `add_event`, `events`, `Animation.key_event` | Yes |
 | Art preparation | `cutout_image` (flat background off, fringe un-mixed, `mask_polygons` cut parts from one image), `build_psd` (layers from PNG/JPG/WebP), `cutout` option on `add_attachment` / `replace_image` | Use MCP | Image import |
 | PSD rigging and art updates | `detect_parts`, `autorig`, `update_art` | Use MCP for filesystem/image import | AutoRig and image tools |
-| Preview and export | `render_preview`, `render_video`, `export_sprite_sheet`, `convert_project` with `atlas: true` (.atlas + .png pages; `pma`, `trim`, `scale`, `max_size`) | Use MCP or editor | Character and scene rendering, Export |
+| Preview and export | `render_preview`, `render_video`, `export_sprite_sheet`, `convert_project` with `atlas: true` (.atlas + .png pages; `pma`, `trim`, `scale`, `max_size`; `texture_format` webp or ktx2 with `codec`, `quality`, `mipmaps`, `zstd`, `fallback`) | Use MCP or editor | Character and scene rendering, Export dialog |
 | Physics baking | `bake_physics` | Use MCP | Live simulation |
 | Quality checks | `validate_project`, `lint_animations` | Rig report add-on | Visual preview |
 
@@ -56,7 +56,8 @@ needs no pixels. Import new image files through MCP or the editor first.
    into a named bone's coordinates without editing anything.
 5. Run `render_preview` with `fps: 15`, `layout: "grid"`, `scale: 0.5`, and an output PNG.
    Inspect the image, then use `validate_project` and `lint_animations` before export. Export
-   with `convert_project` and `atlas: true` (`pma`, `trim`, `scale`, `max_size`): the .json or .skel
+   with `convert_project` and `atlas: true` (`pma`, `trim`, `scale`, `max_size`; `texture_format: "ktx2"`
+   with `pma: true` for GPU-compressed pages, `fallback: "png"` for runtimes without a transcoder): the .json or .skel
    plus `<name>.atlas` and `<name>.png`, which `validate_project` checks.
 6. When art changes, use `update_art` with `mode: "images"` (default). It matches layer names
    to attachment/image names, preserves topology and weights, and rebinds mesh vertices to the
@@ -85,6 +86,10 @@ against unbounded allocations. No FFmpeg executable is bundled.
 prerolls one period and closes the endpoint. It refuses a bone simultaneously driven by another
 constraint family; arbitrary mixed-constraint inversion and key reduction are not implemented.
 Baked results match simulation at the requested sample times; use a sufficient fps for motion.
+
+Atlas pages of `.json`/`.skel` projects may be PNG, WebP (FFmpeg) or KTX2 (Basis Universal ETC1S/UASTC,
+decoded by every tool that reads the atlas; `inspect_project` lists `atlasPages`, `validate_project`
+checks `checks.pages`). KTX2 pages are at most 16384 px a side and only the first mip level is read.
 
 Lint findings are advisory. Loop checks default to idle/breathe/walk/run/loop names; pass `loop`
 explicitly for other clips. Hidden slots can be intentional. Jump thresholds use world units

@@ -12,6 +12,7 @@ import { writeSceneManifest } from '../core/scene.js';
 import { Pose } from '../core/pose.js';
 import { Skeleton, makeAttachment, makeSlot, uniqueName } from '../core/model.js';
 import { packAtlas, usedImages } from '../core/pack.js';
+import { decodeKtx2, encodeKtx2, isKtx2, useBasis } from '../core/ktx2.js';
 import { unzip, zip } from './zip.js';
 import { dragonBonesToSkeleton, isDragonBones, isDragonBonesAtlas } from './dragonbones.js';
 import { alphaBounds, backToFront, fileName, isLayerSet, layerCenter, layerName, pixelArtScale } from './pngset.js';
@@ -49,9 +50,35 @@ export function joinPath(dir, rel) {
   return [dir.replace(/[\\/]+$/, ''), ...parts].join(sep);
 }
 
-// ---- PNG coding -------------------------------------------------------------------------------
+// ---- image coding -----------------------------------------------------------------------------
 
+// The Basis Universal module (ktx2-encoder's build: encoder and transcoder) loads on first use from
+// the editor's own files; vite.config.js serves and bundles basis/basis_encoder.wasm.
+useBasis(async () => {
+  const { BrowserBasisEncoder } = await import('ktx2-encoder');
+  return new BrowserBasisEncoder().init({ wasmUrl: new URL(`${import.meta.env.BASE_URL}basis/basis_encoder.wasm`, location.href).href });
+});
+
+/** RGBA pixels { width, height, data } drawn onto a new canvas. */
+function canvasOf({ width, height, data }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data.buffer, data.byteOffset, width * height * 4), width, height), 0, 0);
+  return canvas;
+}
+
+/**
+ * Decodes an image file (PNG, JPG, WebP… through the browser; KTX2 through Basis Universal) to a
+ * canvas. A KTX2 texture flagged as premultiplied gets `canvas.premultiplied = true`.
+ */
 export async function decodeImage(bytes) {
+  if (isKtx2(bytes)) {
+    const tex = await decodeKtx2(bytes);
+    const canvas = canvasOf(tex);
+    if (tex.pma) canvas.premultiplied = true;
+    return canvas;
+  }
   const bitmap = await createImageBitmap(new Blob([bytes]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   const canvas = document.createElement('canvas');
   canvas.width = bitmap.width;
@@ -315,7 +342,7 @@ async function openSkeletonJson(path, fs, obj, images) {
         warnings.push(`atlas page ${page.name}: ${e}`);
         continue;
       }
-      if (page.pma) unpremultiply(sheet);
+      if (page.pma || sheet.premultiplied) unpremultiply(sheet);
       for (const r of page.regions) loaded.set(r.index >= 0 ? `${r.name}${r.index}` : r.name, extractRegion(sheet, r));
     }
   }
@@ -347,21 +374,21 @@ async function openSkeletonJson(path, fs, obj, images) {
 }
 
 /**
- * Exports skeleton JSON: `<name>.json` (version "3.8" or "4.2"), `<name>.atlas` and
- * `<name>.png`. Returns { atlasPath, warnings }.
+ * Exports skeleton JSON: `<name>.json` (version "3.8", "4.2" or "4.3"), `<name>.atlas` and its
+ * pages (`texture`, see writePackedAtlas). Returns { atlasPath, warnings }.
  */
-export async function exportSkeletonJson(path, fs, doc, images, version) {
+export async function exportSkeletonJson(path, fs, doc, images, version, texture) {
   const { json, warnings } = writeSkeletonJson(doc, { version });
-  const atlasPath = await writePackedAtlas(path, fs, doc, images);
+  const atlasPath = await writePackedAtlas(path, fs, doc, images, texture);
   await fs.writeText(path, JSON.stringify(json, null, 2));
   return { atlasPath, warnings };
 }
 
-/** Exports a binary skeleton: `<name>.skel` (format 4.3), `<name>.atlas` and `<name>.png`. */
-export async function exportSkeletonBinary(path, fs, doc, images) {
+/** Exports a binary skeleton: `<name>.skel` (format 4.3), `<name>.atlas` and its pages. */
+export async function exportSkeletonBinary(path, fs, doc, images, texture) {
   const { json, warnings } = writeSkeletonJson(doc, { version: '4.3', binary: true });
   const bytes = writeSkeletonBinary(json);
-  const atlasPath = await writePackedAtlas(path, fs, doc, images);
+  const atlasPath = await writePackedAtlas(path, fs, doc, images, texture);
   await fs.writeFile(path, bytes);
   return { atlasPath, warnings };
 }
@@ -398,21 +425,32 @@ export async function exportScene(path, fs, doc, images, actorDocs) {
   return { files, warnings };
 }
 
-/** Packs the used images into `<name>.png` (more pages when 8192px overflows) and writes `<name>.atlas`. Returns the atlas path. */
-async function writePackedAtlas(path, fs, doc, images) {
-  const pngPath = withExtension(path, 'png');
+/**
+ * Packs the used images into `<name>.<format>` pages (more when 8192px overflows) and writes
+ * `<name>.atlas`. `texture`: { format: 'png' | 'webp' | 'ktx2', pma, codec, quality, mipmaps, zstd,
+ * fallback } (KTX2 pages can come with a PNG/WebP copy under the same name). Returns the atlas path.
+ */
+async function writePackedAtlas(path, fs, doc, images, { format = 'png', pma = false, fallback = 'none', ...ktx2 } = {}) {
   const atlasPath = withExtension(path, 'atlas');
-  const { pages, atlas, missing } = packAtlas(doc, (name) => { const c = images.get(name); return c && rgbaOf(c); }, { name: stem(pngPath), filter: atlasFilter(doc.textureFilter), maxSize: 8192, powerOfTwo: true });
+  const dir = path.slice(0, path.length - basename(path).length);
+  const { pages, atlas, missing } = packAtlas(doc, (name) => { const c = images.get(name); return c && rgbaOf(c); }, { name: stem(path), filter: atlasFilter(doc.textureFilter), maxSize: 8192, powerOfTwo: true, pma, ext: format });
   if (missing.length) throw new Error(`image '${missing[0]}' is missing`);
   for (const page of pages) {
-    const canvas = document.createElement('canvas');
-    canvas.width = page.width;
-    canvas.height = page.height;
-    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(page.data.buffer), page.width, page.height), 0, 0);
-    await fs.writeFile(pngPath.slice(0, pngPath.length - basename(pngPath).length) + page.name, await encodePng(canvas));
+    await fs.writeFile(dir + page.name, await encodePage(page, format, { ...ktx2, pma }));
+    if (format === 'ktx2' && fallback !== 'none') await fs.writeFile(dir + page.name.replace(/\.ktx2$/, `.${fallback}`), await encodePage(page, fallback));
   }
   await fs.writeText(atlasPath, atlas);
   return atlasPath;
+}
+
+/** A packed page as PNG, WebP (the browser's encoder, quality 100) or KTX2 bytes. */
+async function encodePage(page, format, ktx2) {
+  if (format === 'ktx2') return encodeKtx2(page, ktx2);
+  const canvas = canvasOf(page);
+  if (format === 'png') return encodePng(canvas);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 1));
+  if (blob?.type !== 'image/webp') throw new Error('this browser cannot encode WebP; export PNG or KTX2 pages instead');
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 // ---- import -----------------------------------------------------------------------------------
