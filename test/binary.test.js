@@ -208,3 +208,26 @@ test('physics constraints and wind keys round-trip through .skel', () => {
   assert.deepEqual(back.constraints.filter((c) => c.type === 'physics'), json.constraints.filter((c) => c.type === 'physics'));
   assert.deepEqual(Object.values(back.animations)[0].physics, anim.physics);
 });
+
+test('transform constraint options round-trip through .skel in every combination', () => {
+  const options = ['localSource', 'localTarget', 'additive', 'clamp'];
+  for (let bits = 0; bits < 16; bits++) {
+    const json = structuredClone(FIXTURE);
+    const c = { type: 'transform', name: 'follow', source: 'hip', bones: ['target'], properties: { x: { to: { x: {} } }, rotate: { to: { rotate: {} } } } };
+    options.forEach((key, i) => {
+      if (bits & (1 << i)) c[key] = true;
+    });
+    json.constraints.push(c);
+    const back = readSkeletonBinary(writeSkeletonBinary(structuredClone(json)));
+    assert.deepEqual(back.constraints.find((k) => k.type === 'transform'), c, `flags ${bits}`);
+  }
+  // 4.2 names write as 4.3 flags: local sets both local bits, relative is additive.
+  const legacy = structuredClone(FIXTURE);
+  legacy.constraints.push({ type: 'transform', name: 'follow', source: 'hip', bones: ['target'], local: true, relative: true, properties: { x: { to: { x: {} } } } });
+  const back = readSkeletonBinary(writeSkeletonBinary(legacy)).constraints.find((k) => k.type === 'transform');
+  assert.equal(back.localSource, true);
+  assert.equal(back.localTarget, true);
+  assert.equal(back.additive, true);
+  assert.equal(back.clamp, undefined);
+  assert.equal(back.local, undefined);
+});

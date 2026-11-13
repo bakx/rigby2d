@@ -606,13 +606,18 @@ function readPhysics(r, name, out) {
   return c;
 }
 
+/** Transform constraint flag bits 0x02, 0x04, 0x08, 0x10 (bit 0 is skin, bits 5-7 the property count). */
+const TRANSFORM_FLAGS = ['localSource', 'localTarget', 'additive', 'clamp'];
+
 function readTransform(r, name, bones, out) {
   const mappedByName = (r.transformMapped ??= new Map());
   const source = out.bones[r.varint()].name;
   const flags = r.byte();
-  if (flags & 0x1e) throw new Unsupported(`Transform constraint options (flags 0x${flags.toString(16)}) on '${name}'`);
   const c = { type: 'transform', name, source, bones };
   if (flags & 0x01) c.skin = true;
+  TRANSFORM_FLAGS.forEach((key, i) => {
+    if (flags & (0x02 << i)) c[key] = true;
+  });
   const properties = {};
   const mapped = new Set();
   for (let p = flags >> 5; p > 0; p--) {
@@ -1405,13 +1410,14 @@ function writePhysics(w, c, boneIndex) {
 }
 
 function writeTransform(w, c, boneIndex) {
-  for (const key of ['local', 'relative', 'additive', 'clamp']) if (c[key]) throw new Unsupported(`Transform constraint '${key}' option ('${c.name}')`);
   const properties = Object.entries(c.properties ?? {});
   if (properties.length > 7) throw new Unsupported(`More than 7 transform properties ('${c.name}')`);
   w.byte(CONSTRAINT_TRANSFORM);
   writeBones(w, c, boneIndex);
   w.varint(boneIndex.get(c.source));
-  w.byte((properties.length << 5) | (c.skin ? 0x01 : 0));
+  // 4.2's local/relative are 4.3's localSource + localTarget / additive.
+  const options = [c.localSource ?? c.local, c.localTarget ?? c.local, c.additive ?? c.relative, c.clamp];
+  w.byte((properties.length << 5) | options.reduce((bits, on, i) => (on ? bits | (0x02 << i) : bits), c.skin ? 0x01 : 0));
   const mapped = new Set();
   for (const [from, entry] of properties) {
     const fromId = TRANSFORM_PROPERTIES.indexOf(from);
