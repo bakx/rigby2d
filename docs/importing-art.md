@@ -1,7 +1,8 @@
 # Importing art
 
 Rigby2D animates bitmap artwork. Draw your character in any paint program, in separate pieces that
-can move on their own, and bring the pieces in as a layered PSD, an SVG with layers, or PNG files.
+can move on their own, and bring the pieces in as a layered PSD, an Aseprite file, an SVG with
+layers, or PNG files.
 
 ## Preparing artwork
 
@@ -33,6 +34,34 @@ can move on their own, and bring the pieces in as a layered PSD, an SVG with lay
 
 Next: rig it in one step with [AutoRig](autorig.md), or by hand with
 [bones](bones-and-slots.md#bones).
+
+## Importing an Aseprite file
+
+*File ▸ Import ▸ Aseprite…* opens `.aseprite` and `.ase` files directly, with no export step:
+
+- Each **image layer** becomes a slot on the **selected bone** (the root when nothing is selected),
+  placed where it was drawn, like a PSD. Groups are flattened; hidden layers and groups come in
+  hidden. Layer and cel opacity are baked into the images.
+- Every **different picture** a layer shows over the frames becomes an image of that slot (the same
+  drawing on several frames, or a linked cel, is one image), so the slot can swap between them.
+- **Frames and tags become animations.** Each tag is an animation with the tag's name, playing its
+  frames at Aseprite's frame durations, forward, in reverse or ping-pong. A file with frames but no
+  tags gets one animation named after the file. They are image swaps (stepped keys on the slots
+  whose picture changes), so a sprite animation plays as drawn, and you can add bones, meshes and
+  constraints on top.
+- **Hidden layers are variants** you switch on (another screen, an outfit, an expression): each one
+  gets its own animation of the same frames with that layer shown, named after the layer (with
+  tags, `walk · Heart`). Every animation hides the other variants at its start, so switching
+  animations in a game never leaves one showing.
+- It is pixel art, so the [pixel grid](#pixel-grid) turns on at 1 unit per pixel in a project
+  without images, and the art stays sharp.
+- **Blend modes**: Multiply, Screen and Addition layers keep their blend on the slot. Layers in other
+  blend modes (Overlay, Soft Light, Color Burn and the rest) are usually colour grading: they are
+  baked into the layers below them, so every part looks as it does in Aseprite, and are not imported
+  themselves. A hidden one comes in as a normal, hidden part.
+- Layers are clipped to the canvas, as Aseprite shows them.
+- Indexed, grayscale and RGBA sprites all work. Tilemap layers, reference layers and per-cel z-order
+  are left out; the status bar lists what was, and which blend layers were baked.
 
 ## Importing an SVG
 

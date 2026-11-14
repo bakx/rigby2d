@@ -55,8 +55,8 @@ export const Mode = Object.freeze({ Setup: 'setup', Animate: 'animate' });
 export const TOOLS = [
   { id: 'pose', label: tn('Pose'), icon: 'hand' },
   { id: 'create', label: tn('Create'), icon: 'bone' },
-  { id: 'rotate', label: tn('Rotate'), icon: 'rotate-cw' },
   { id: 'translate', label: tn('Translate'), icon: 'move' },
+  { id: 'rotate', label: tn('Rotate'), icon: 'rotate-cw' },
   { id: 'scale', label: tn('Scale'), icon: 'maximize-2' },
   { id: 'shear', label: tn('Shear'), icon: 'shear' },
 ];
@@ -142,6 +142,17 @@ export class App {
     this.imageGlow = null;
     /** Mesh being edited: { slot, name, mode: 'vertices' | 'weights', bone, radius, strength, subtract, selected }. */
     this.meshEdit = null;
+    /**
+     * Test pose while painting weights (Setup mode): local transforms by bone that override the
+     * setup pose for display only, so a bone can be turned to see the weights work. Never saved;
+     * cleared when weight painting ends. `wiggle` swings the paint bone back and forth.
+     */
+    this.testPose = new Map();
+    this.wiggle = { on: false, angle: 20, speed: 0.8 };
+    /** Picking a bone for a field: { prompt, done(bone) }; the next bone clicked goes to `done`. */
+    this.pick = null;
+    /** Warp deformer being edited (editor/warp.js): { name, selected point }. */
+    this.warpEdit = null;
     /** Shape being edited (bounding box, clipping or path): { slot, name, selected }. */
     this.shapeEdit = null;
     /** Whether the Rig panel is open (rigpanel.js): the tree then leaves skins, constraints and events to it. */
@@ -169,8 +180,8 @@ export class App {
       this.keymap = loadPreset();
       this.changed();
     });
-    /** Animate mode: key every edit immediately (on), or keep edits as unkeyed changes (off). */
-    this.autoKey = false;
+    /** Animate mode: key every edit immediately (on, the default), or keep edits as unkeyed changes (off). */
+    this._autoKey = loadSetting('rigby.animate.autoKey', '1') === '1';
     /** Unkeyed changes in animate mode: bone index -> { channel -> partial local transform }. */
     this.pending = new Map();
     /** Axes for numeric transform values: 'local', 'parent' or 'world'. */
@@ -257,6 +268,9 @@ export class App {
     this.frameRequest = false;
     /** Bumped on every state change so panels know to refresh. */
     this.version = 0;
+    /** Bumps on every change except pose-only ones (a bone moved, rotated, scaled): panels that show
+     *  no transform values (the tree) rebuild on this instead of on `version`. */
+    this.structureVersion = 0;
     /** Bumped when playback moves the time: only time-dependent views need to follow it. */
     this.timeVersion = 0;
     this.history = { undo: [], redo: [] };
@@ -274,10 +288,23 @@ export class App {
     this.timelineClipStamp = 0;
   }
 
-  changed() {
+  /** Auto key (Animate mode): remembered between sessions. */
+  get autoKey() {
+    return this._autoKey;
+  }
+
+  set autoKey(on) {
+    if (this._autoKey === !!on) return;
+    this._autoKey = !!on;
+    saveSetting('rigby.animate.autoKey', on ? '1' : '0');
+  }
+
+  /** Marks the app changed. `pose`: only bone transforms changed (a drag), not structure or selection. */
+  changed({ pose = false } = {}) {
     invalidateConstraints(this.doc);
     FPS = this.doc.settings?.fps ?? 30;
     this.version++;
+    if (!pose) this.structureVersion++;
   }
 
   setStatus(text) {
@@ -335,8 +362,62 @@ export class App {
   }
 
   /** Pose shown in the viewport: setup pose, or the current animation frame in animate mode. */
+  /** Whether bone edits go to the test pose: painting weights in Setup mode. */
+  get testPosing() {
+    return this.mode === Mode.Setup && this.meshEdit?.mode === 'weights';
+  }
+
+  /** The bone weights are painted for (the wiggle swings it): the chosen one, else the first bound. */
+  paintBone() {
+    const e = this.meshEdit;
+    if (!e) return null;
+    if (e.bone !== undefined && e.bone !== null) return e.bone;
+    return this.doc.attachment(e.slot, e.name)?.weights?.[0]?.[0]?.bone ?? null;
+  }
+
+  /** Puts the test pose back to the setup pose (and stops the wiggle). */
+  resetTestPose() {
+    this.testPose.clear();
+    this.wiggle.on = false;
+    this.changed();
+  }
+
+  /** Starts picking a bone: the next bone clicked in the viewport or tree goes to `done`. */
+  startPick(prompt, done) {
+    this.pick = { prompt, done };
+    this.setStatus(t('{prompt} (Esc cancels)', { prompt }));
+    this.changed();
+  }
+
+  /** Ends picking with `bone` (or cancels with null). */
+  finishPick(bone) {
+    const p = this.pick;
+    this.pick = null;
+    if (p && bone !== null && bone !== undefined) p.done(bone);
+    else if (p) this.setStatus(t('Picking cancelled'));
+    this.changed();
+  }
+
   pose() {
     const pose = new Pose(this.doc);
+    if (this.testPose.size || this.wiggle.on) {
+      // Kept while painting weights, or while shaping one side of a 2.5D turn (warpEdit.preview).
+      if (!this.testPosing && !this.warpEdit?.preview) {
+        this.testPose.clear();
+        this.wiggle.on = false;
+      } else {
+        for (const [bone, local] of this.testPose) if (pose.local[bone]) Object.assign(pose.local[bone], local);
+        const b = this.wiggle.on ? this.paintBone() : null;
+        if (b !== null && pose.local[b]) {
+          const swing = Math.sin((performance.now() / 1000) * this.wiggle.speed * 2 * Math.PI);
+          // A bone in an IK chain follows its target: swing the target instead (up and down).
+          const ik = this.doc.ik.find((k) => k.bones.includes(b));
+          if (ik && pose.local[ik.target]) pose.local[ik.target].y += swing * (this.doc.bones[b].length || 100) * (this.wiggle.angle / 90);
+          else pose.local[b].rotation += this.wiggle.angle * swing;
+        }
+        pose.updateWorld(this.doc);
+      }
+    }
     const anim = this.currentAnimation();
     if (this.mode === Mode.Animate && anim) {
       // Physics simulates while playing (state kept across frames) and rests otherwise.
@@ -935,6 +1016,30 @@ export class App {
       this.setStatus(t('Imported {count} layers from {file}', { count: n, file: io.basename(file.name) }) + this.pixelArtNote(had, info.pixelScale));
     } catch (e) {
       this.setStatus(`PSD import failed: ${errorText(e)}`);
+    }
+  }
+
+  /** Imports an Aseprite file: each layer becomes a part; its frames and tags become animations. */
+  async importAseprite() {
+    const [file] = (await this.guard(() => platform.pickImportFiles('Aseprite', ['aseprite', 'ase'], false))) ?? [];
+    if (!file) return;
+    try {
+      const had = this.doc.images.length > 0;
+      const info = {};
+      const r = await io.importAseprite(file, selBone(this.sel) ?? 0, this.doc, this.images, info);
+      this.frameRequest = true;
+      if (r.animations && this.anim === null) this.anim = this.doc.animations.length - r.animations;
+      this.changed();
+      this.commitHistory?.();
+      track('editor-import-aseprite');
+      const what = r.animations
+        ? t('Imported {layers} layer(s) and {count} animation(s) from {file}', { layers: r.layers, count: r.animations, file: io.basename(file.name) })
+        : t('Imported {count} layers from {file}', { count: r.layers, file: io.basename(file.name) });
+      const baked = r.baked.length ? `. ${t('Blend layers baked into the layers below: {names}', { names: r.baked.join(', ') })}` : '';
+      const left = r.skipped.length ? `. ${t('Left out: {what}', { what: r.skipped.map((x) => t(x)).join(', ') })}` : '';
+      this.setStatus(what + this.pixelArtNote(had, info.pixelScale) + baked + left);
+    } catch (e) {
+      this.setStatus(`${t('Aseprite import failed')}: ${errorText(e)}`);
     }
   }
 

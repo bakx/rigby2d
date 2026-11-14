@@ -13,6 +13,7 @@ import { actorSlots } from '../core/scene.js';
 import { actorBounds, actorOfBone, imageKey } from './actors.js';
 import { MeshTool } from './meshtool.js';
 import { ShapeTool } from './shapetool.js';
+import { WarpTool } from './warptool.js';
 import { GLOW_COLORS } from './draworderdnd.js';
 import { h, popupMenu } from './widgets.js';
 import { t, tn } from './i18n.js';
@@ -41,6 +42,7 @@ export class Viewport {
     this.glView = glCanvas ? GLView.create(glCanvas) : null;
     this.meshTool = new MeshTool(app, this);
     this.shapeTool = new ShapeTool(app, this);
+    this.warpTool = new WarpTool(app, this);
     this.meshPress = false;
     this.width = 1;
     this.height = 1;
@@ -130,6 +132,7 @@ export class Viewport {
     if (overlays) this.drawGuides(pose);
     this.meshTool.draw(this.ctx);
     this.shapeTool.draw(this.ctx);
+    this.warpTool.draw(this.ctx);
     if (this.drag?.kind === 'box') {
       const { from, to } = this.drag;
       this.ctx.save();
@@ -744,7 +747,12 @@ export class Viewport {
       if (sy < RULER_W) continue;
       ctx.moveTo(RULER_W - 6, sy);
       ctx.lineTo(RULER_W, sy);
-      ctx.fillText(String(Math.round(y)), 1, sy + 2);
+      // Turned to run along the ruler (read bottom to top), just past the tick like the top ruler's.
+      ctx.save();
+      ctx.translate(2, sy - 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(String(Math.round(y)), 0, 0);
+      ctx.restore();
     }
     ctx.stroke();
     // Corner (the intersection): click opens the guide menu.
@@ -1071,8 +1079,12 @@ export class Viewport {
       this.press = null;
       return;
     }
-    const editTool = this.meshTool.active ? this.meshTool : this.shapeTool.active ? this.shapeTool : null;
-    if (e.button === 0 && editTool) {
+    const editTool = this.warpTool.active ? this.warpTool : this.meshTool.active ? this.meshTool : this.shapeTool.active ? this.shapeTool : null;
+    // Painting weights: Alt+drag a bone to try a pose (the test pose; the setup pose stays).
+    if (e.button === 0 && e.altKey && this.app.testPosing) {
+      e.preventDefault();
+      this.press = { pos, started: false, add: false, testPose: true };
+    } else if (e.button === 0 && editTool) {
       this.meshPress = editTool;
       editTool.down(pos, e);
     } else if (e.button === 0) {
@@ -1099,6 +1111,7 @@ export class Viewport {
       else if (app.meshEdit?.mode === 'weights') app.changed(); // brush outline follows the cursor
     }
     if (this.meshPress === this.shapeTool && e.buttons & 1) this.shapeTool.move(pos);
+    if (this.meshPress === this.warpTool && e.buttons & 1) this.warpTool.move(pos);
     if (this.panning) {
       app.view.panX += pos[0] - this.panning[0];
       app.view.panY += pos[1] - this.panning[1];
@@ -1113,7 +1126,7 @@ export class Viewport {
       if (this.press.started) this.dragMove(pos, e.shiftKey);
     }
     // Shared bone highlight: light up the bone under the cursor, unless dragging or in a sub-editor.
-    if (!this.panning && !this.press && !this.meshTool.active && !this.shapeTool.active) {
+    if (!this.panning && !this.press && !this.meshTool.active && !this.shapeTool.active && !this.warpTool.active) {
       // The last drawn pose, unless the skeleton changed since (a bone added, an undo, another file).
       const last = this.lastPose;
       const fresh = last && last.world.length === app.doc.bones.length && this.lastPoseDoc === app.doc;
@@ -1146,10 +1159,29 @@ export class Viewport {
     }
   }
 
+  /**
+   * In Animate mode an image under the cursor stands for the bone that carries it: images are placed
+   * in the setup pose and move over time with their bones, so a click or drag on one picks its bone.
+   * (The tree still selects the slot itself, for its attachment and color keys.)
+   */
+  animateHit(hit) {
+    const app = this.app;
+    if (!hit || app.mode !== Mode.Animate || selBone(hit) !== null) return hit;
+    const slot = selSlot(hit);
+    return slot === null ? hit : { bone: app.doc.slots[slot].bone };
+  }
+
   /** Click: select what is under the cursor; Ctrl adds or removes bones; empty space deselects. */
   click(pos, add) {
     const app = this.app;
-    const hit = this.hitTest(app.pose(), pos);
+    if (this.press?.testPose) return;
+    // Picking a bone for a field (a constraint's driver, an IK target...): the click answers it.
+    if (app.pick) {
+      const b = this.hitBone(app.pose(), pos);
+      if (b !== null && b !== undefined) app.finishPick(b);
+      return;
+    }
+    const hit = this.animateHit(this.hitTest(app.pose(), pos));
     // Create tool: a click on empty space adds a point bone (dragging draws a regular bone).
     if (app.tool === 'create' && !hit && !add) {
       if (app.mode === Mode.Animate) {
@@ -1174,8 +1206,18 @@ export class Viewport {
     const add = this.press?.add;
     let drag = null;
     // A selected point bone's handle turns it, whatever the tool (it has no tip to drag).
-    const knob = app.tool === 'create' ? null : this.hitPointKnob(app.pose(), press);
-    if (knob !== null) {
+    const knob = app.tool === 'create' || this.press?.testPose ? null : this.hitPointKnob(app.pose(), press);
+    if (app.pick) {
+      drag = null;
+    } else if (this.press?.testPose) {
+      // Test pose: near a bone's origin moves it, elsewhere on it turns it toward the cursor.
+      const pose = app.pose();
+      const b = this.hitBone(pose, press);
+      if (b !== null && b !== undefined) {
+        const origin = this.toScreen(pose.world[b].apply([0, 0]));
+        drag = { kind: Math.hypot(press[0] - origin[0], press[1] - origin[1]) < 10 ? 'poseTranslate' : 'poseAim', index: b };
+      }
+    } else if (knob !== null) {
       drag = { kind: 'poseAim', index: knob };
     } else if (app.tool === 'create') {
       if (app.mode === Mode.Animate) app.setStatus(t('Bones can only be created in Setup mode (Tab)'));
@@ -1184,7 +1226,7 @@ export class Viewport {
       drag = { kind: 'box', from: press, to: press };
     } else {
       const pose = app.pose();
-      const hit = this.hitTest(pose, press);
+      const hit = this.animateHit(this.hitTest(pose, press));
       const bones = app.selectedBones();
       if (hit && selBone(hit) !== null) {
         if (!bones.includes(selBone(hit))) app.select(hit);
@@ -1201,6 +1243,10 @@ export class Viewport {
         drag = { kind: 'slot', index: selSlot(hit) };
       } else if (bones.length && app.tool !== 'pose') {
         // Dragging empty space transforms the current selection.
+        drag = { kind: 'bones' };
+      } else if (selSlot(app.sel) !== null && app.tool !== 'pose' && app.mode === Mode.Animate) {
+        // Animate mode keys bones, not image placement: the selected image's bone moves instead.
+        app.select({ bone: app.doc.slots[selSlot(app.sel)].bone });
         drag = { kind: 'bones' };
       } else if (selSlot(app.sel) !== null && app.tool !== 'pose') {
         drag = { kind: 'slot', index: selSlot(app.sel) };

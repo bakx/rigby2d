@@ -363,8 +363,8 @@ function sourceValues(pose, c) {
   };
 }
 
-/** Target property values after the property mapping and offsets. */
-function targetValues(pose, c) {
+/** Target property values after the property mapping and offsets (exported for editors). */
+export function targetValues(pose, c) {
   const src = sourceValues(pose, c);
   const reflected = !c.localSource && pose.world[c.source].determinant() < 0;
   const out = {};
@@ -709,7 +709,7 @@ export function solveSlider(sk, pose, c, state) {
   const local = pose.local;
   pose.local = pose.applied;
   try {
-    pose.apply(sk, anim, time, Math.min(1, state.mix));
+    pose.apply(sk, anim, time, Math.min(1, state.mix), c.additive);
   } finally {
     pose.local = local;
   }

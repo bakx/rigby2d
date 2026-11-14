@@ -55,6 +55,57 @@ Each control has a **Lip-sync** button: it keys the control on every frame from 
 animation's first audio track. A *Mouth open* control then opens on speech and closes in silence.
 For mouth shapes per sound, use [viseme lip-sync](lip-sync.md) instead.
 
+## 2.5D turn
+
+A head (or a body) can turn left and right, and tilt up and down, as if it were 3D, with one control. Select the bone the
+parts hang from (the head) and, in the inspector's **2.5D turn** section, press **Make turnable**.
+Every picture on that bone and the bones below it turns together:
+
+- Each part gets a **depth** from the draw order: front hair and the nose near, the face in the
+  middle, ears and back hair far. Near parts move more when the head turns; parts behind move the
+  other way.
+- The parts sit on a **curved surface** across their width, so the side turning away foreshortens
+  and the side turning in widens.
+- Image parts become grid meshes, so they can bend.
+
+Drag the new **control bone** (`head-turn-control`, placed above the head): left and right turns the
+head, up and down tilts it, and diagonally does both. Or use the **Turn** and **Tilt** sliders in the
+section (double-click one for straight ahead). In Animate mode the sliders key the control bone; key
+it like any bone to make a character look around.
+
+| Setting | Meaning |
+| --- | --- |
+| **Angle** | The largest turn, at the control's full reach (20° by default). |
+| **Tilt angle** | The largest tilt up or down (12° by default). |
+| **Roundness** | How curved the surface is: 0 flat (parts only slide), 1 a full cylinder. |
+| **Depth of each part** | How near each part is: higher moves more. |
+
+### Shaping a side by hand
+
+The automatic turn is a first draft. To make a side look exactly right (a cheek that should hide, a
+nose that should poke out further), shape it by hand:
+
+1. Under **Shape a side by hand**, press **Left**, **Right**, **Up** or **Down** (in Setup mode).
+   The head turns fully that way in the viewport and an orange grid appears over it.
+2. Drag the orange points until that view looks right. Shift-click picks several points; dragging
+   inside the grid moves them all.
+3. Press **Done**. The head goes back to straight ahead.
+
+Every angle in between blends from straight ahead to the shape you drew, so you only fix the far
+sides. A shaped side shows a check mark; press it again to change it, or **Reset this side** to go
+back to the automatic turn. The shaping is a [warp deformer](meshes.md#warp-deformers) named
+`head-turn-shape`, baked into the turn animations, so it exports with them.
+
+**Rebuild** measures the parts again after you change the pictures or bones (shaped sides are kept);
+**Remove** takes the turn out (the meshes stay). Changing the angle, roundness or a depth rebuilds it at once, and keys on
+the control bone are kept.
+
+The turn is ordinary skeleton data, so every runtime plays it: two animations of mesh deform keys
+(`head-turn`, left to right, and `head-turn-tilt`, down to up) and two additive slider constraints
+that play them from the control bone's x and y. Additive means turn and tilt combine, and they add to
+any other mesh animation on those parts. In a game, move the control bone to make the character look
+at something: the player, the cursor, whoever is talking.
+
 ## Poses in exports
 
 Poses and face controls are editing tools: they are saved in the `.rigby` file but not in skeleton

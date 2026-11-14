@@ -93,9 +93,22 @@ add up to 1.
 Drag over the mesh to paint. Colors show the paint bone's weight: red is full weight, blue none.
 **Unbind** removes the weights; the mesh then follows its slot's bone only.
 
+### Testing weights while you paint
+
+You don't need a test animation to see what the weights do. While painting:
+
+- **Alt+drag a bone** to try a pose: near the bone's start it moves the bone, elsewhere on it the bone
+  turns toward the cursor. The mesh bends exactly as it will in animation, and the brush and colors
+  follow the posed mesh, so you can keep painting on it. Bones moved by IK follow their target:
+  Alt+drag the target.
+- **Wiggle** swings the paint bone back and forth (by the angle next to it) while you paint, so every
+  stroke shows its effect at once. For a bone in an IK chain it swings the chain's target.
+- **Reset** puts every bone back. The setup pose never changes: the test pose is for looking only, is
+  not saved, and ends when you leave weight painting.
+
 > [!TIP]
-> Check weights by rotating the bones in Animate mode, then undo. A crease at a joint means the
-> weights change too suddenly across it: paint a softer blend over two or three rows of vertices.
+> A crease at a joint means the weights change too suddenly across it: wiggle the bone and paint a
+> softer blend over two or three rows of vertices.
 
 ## Deforming in Animate mode
 
@@ -107,6 +120,34 @@ In Animate mode, **Deform mesh** lets you move vertices over time:
 
 Deform keys add to what the bones do, so you can squash a face for a blink, bulge a cheek or wobble a
 belly on top of the skeletal animation.
+
+## Warp deformers
+
+A warp deformer is a lattice, a grid of points over one or more meshes: drag its points and the
+meshes bend smoothly with them, without moving vertices one by one. Lattices can sit inside
+lattices: a parent reshapes a whole part (a head), children make local changes (an eye, a cheek),
+and they add up.
+
+- **Add one:** select a bone and, in the inspector's **Warp deformers** section, press **Add warp**.
+  It covers the pictures on that bone that no warp moves yet; image parts become grid meshes so
+  they can bend. The lattice shows in the viewport while you edit it (**Edit**, **Done** or Esc).
+- **In Setup mode** dragging a point reshapes the meshes for good, like a paint program's warp: the
+  lattice then rests again.
+- **In Animate mode** dragging a point keys the whole lattice at the current frame. Between keys the
+  lattice moves along the key's curve.
+- **Grid** sets the number of cells across and up. Changing it keeps the deformation of every key
+  (the new points take the old lattice's shape where they sit), so you can start coarse and add
+  detail where you need it.
+- **Inside** puts the lattice inside another one, and **Child warp** adds a lattice over one of a
+  warp's meshes, inside it.
+- **Moving points:** drag a point to move it; Shift-click picks several points, then drag any of
+  them to move them together; drag inside the lattice (not on a point) to move the whole shape.
+  Click outside to clear the picks.
+
+Warps are editing tools: they are baked into ordinary mesh deform keys, added to any keys the mesh
+has of its own (a [2.5D turn](poses-and-faces.md#25d-turn) included), so exports and every runtime
+play them with nothing extra. Edit the lattice again and the keys are baked again; delete a warp and
+the meshes get their own keys back.
 
 ## Linked meshes
 
