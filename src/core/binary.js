@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// Binary skeleton files (".skel"), format 4.3, and reading of format 4.2. Converts between the
+// Binary skeleton files (".skel"), writing format 4.3 and reading formats 4.0 through 4.3. Converts between the
 // binary encoding and the skeleton JSON object structure, so all other code works with one
-// representation. A 4.2 file is read into the 4.2 JSON structure (typed constraint lists with an
+// representation. A 4.0–4.2 file is read into the corresponding JSON structure (typed constraint lists with an
 // order, fixed transform mixes), which interop.js reads like a 4.2 JSON export; 4.3 files into the
 // 4.3 structure. The two layouts share everything but: bone length/inherit order, the constraint
 // sections (4.2: IK, transform, path, physics lists, each entry with its order; 4.3: one list with a
@@ -278,10 +278,12 @@ export function readSkeletonBinary(bytes) {
   const hash = toBase64(bytes.subarray(0, 8));
   r.p = 8;
   const version = r.string();
+  r.legacy = /^4\.[01]\./.test(version ?? '');
+  r.v40 = /^4\.0\./.test(version ?? '');
   r.v42 = /^4\.2/.test(version ?? '');
-  if (!r.v42 && !/^4\.3/.test(version ?? '')) throw new Unsupported(`Binary format ${version}`);
+  if (!r.legacy && !r.v42 && !/^4\.3/.test(version ?? '')) throw new Unsupported(`Binary format ${version}`);
   const skeleton = { hash, [VERSION_FIELD]: version, x: r.float(), y: r.float(), width: r.float(), height: r.float() };
-  const referenceScale = r.float();
+  const referenceScale = r.legacy ? 100 : r.float();
   if (referenceScale !== 100) skeleton.referenceScale = referenceScale;
   const nonessential = r.bool();
   if (nonessential) {
@@ -309,7 +311,7 @@ export function readSkeletonBinary(bytes) {
     const shearX = r.float();
     const shearY = r.float();
     let inherit, length;
-    if (r.v42) {
+    if (r.v42 || r.legacy) {
       length = r.float();
       inherit = INHERIT[r.varint()] ?? 'normal';
     } else {
@@ -329,11 +331,12 @@ export function readSkeletonBinary(bytes) {
     if (nonessential) {
       const color = r.color();
       if (color !== DEFAULT_BONE_COLOR) b.color = color;
+      if (r.legacy) { out.bones.push(b); continue; }
       const icon = r.string();
       if (icon !== null) b.icon = icon;
       // Editor-only values; kept only when they differ from the defaults.
-      const iconA = r.float();
-      const iconB = r.float();
+      const iconA = r.v42 ? 1 : r.float();
+      const iconB = r.v42 ? 0 : r.float();
       const visible = r.bool();
       if (iconA !== 1) b._iconA = iconA;
       if (iconB !== 0) b._iconB = iconB;
@@ -355,15 +358,16 @@ export function readSkeletonBinary(bytes) {
     if (attachment !== null) s.attachment = attachment;
     const blend = BLEND[r.varint()] ?? 'normal';
     if (blend !== 'normal') s.blend = blend;
-    if (nonessential && !r.bool()) s._visible = false;
+    if (nonessential && !r.legacy && !r.bool()) s._visible = false;
     out.slots.push(s);
     r.slots.push(s);
   }
 
   // Constraints, in application order.
   out.constraints = [];
-  const nConstraints = r.v42 ? 0 : r.varint();
+  const nConstraints = r.v42 || r.legacy ? 0 : r.varint();
   if (r.v42) readConstraints42(r, out);
+  if (r.legacy) readLegacyConstraints(r, out);
   for (let i = 0; i < nConstraints; i++) {
     const name = r.string();
     const type = r.byte();
@@ -386,19 +390,20 @@ export function readSkeletonBinary(bytes) {
   if (!out.constraints.length) delete out.constraints;
 
   // Skins: the default skin, then named skins.
-  out.skins = [{ name: 'default', attachments: readSkin(r, out, nonessential) }];
+  const defaultAttachments = readSkin(r, out, nonessential);
+  out.skins = Object.keys(defaultAttachments).length ? [{ name: 'default', attachments: defaultAttachments }] : [];
   const nSkins = r.varint();
   for (let i = 0; i < nSkins; i++) {
-    const skin = { name: r.string() };
-    if (nonessential) {
+    const skin = { name: r.legacy ? r.ref() : r.string() };
+    if (nonessential && !r.legacy) {
       const color = r.color();
       if (color !== 'ffffffff') skin._color = color;
     }
     const nBones = r.varint();
     if (nBones) skin.bones = [];
     for (let k = 0; k < nBones; k++) skin.bones.push(out.bones[r.varint()].name);
-    if (r.v42) {
-      for (const type of CONSTRAINT_LISTS_42) {
+    if (r.v42 || r.legacy) {
+      for (const type of (r.legacy ? CONSTRAINT_LISTS_42.slice(0, 3) : CONSTRAINT_LISTS_42)) {
         const n = r.varint();
         for (let k = 0; k < n; k++) (skin[type] ??= []).push(constraint42(r, out, type, r.varint()).name);
       }
@@ -431,7 +436,7 @@ export function readSkeletonBinary(bytes) {
   const eventNames = [];
   const nEvents = r.varint();
   for (let i = 0; i < nEvents; i++) {
-    const name = r.string();
+    const name = r.legacy ? r.ref() : r.string();
     const e = {};
     const int = r.varint(false);
     const float = r.float();
@@ -440,7 +445,7 @@ export function readSkeletonBinary(bytes) {
     if (int) e.int = int;
     if (float) e.float = float;
     if (string) e.string = string;
-    if (audio !== null) {
+    if (audio) {
       e.audio = audio;
       e.volume = r.float();
       e.balance = r.float();
@@ -754,11 +759,65 @@ function readSkin(r, out, nonessential) {
     const n = r.varint();
     for (let k = 0; k < n; k++) {
       const key = r.ref();
+      if (r.legacy) { atts[key] = readLegacyAttachment(r, key, nonessential); continue; }
       const flags = r.byte();
       atts[key] = readAttachment(r, flags, key, nonessential);
     }
   }
   return skin;
+}
+
+function readLegacyAttachment(r, key, nonessential) {
+  const name = r.ref();
+  const type = r.byte();
+  const a = {};
+  if (name && name !== key) a.name = name;
+  const sequence = () => { if (!r.v40 && r.bool()) a.sequence = readSequence(r); };
+  const vertices = count => {
+    a.vertexCount = count;
+    a.vertices = [];
+    if (r.bool()) {
+      for (let i = 0; i < count; i++) {
+        const n = r.varint(); a.vertices.push(n);
+        for (let j = 0; j < n; j++) a.vertices.push(r.varint(), r.float(), r.float(), r.float());
+      }
+    } else for (let i = 0; i < count * 2; i++) a.vertices.push(r.float());
+  };
+  const shorts = () => Array.from({ length: r.varint() }, () => (r.byte() << 8) | r.byte());
+  if (type === ATTACHMENT_REGION) {
+    const path = r.ref(); if (path) a.path = path;
+    for (const p of ['rotation', 'x', 'y', 'scaleX', 'scaleY', 'width', 'height']) a[p] = r.float();
+    const color = r.color(); if (color !== 'ffffffff') a.color = color;
+    sequence(); return a;
+  }
+  if (type === ATTACHMENT_MESH) {
+    a.type = 'mesh'; const path = r.ref(); if (path) a.path = path;
+    const color = r.color(); if (color !== 'ffffffff') a.color = color;
+    const count = r.varint(); a.uvs = Array.from({ length: count * 2 }, () => r.float());
+    a.triangles = shorts(); vertices(count); delete a.vertexCount; a.hull = r.varint(); sequence();
+    if (nonessential) { a.edges = shorts(); a.width = r.float(); a.height = r.float(); }
+    return a;
+  }
+  if (type === ATTACHMENT_LINKED_MESH) {
+    a.type = 'linkedmesh'; const path = r.ref(); if (path) a.path = path;
+    const color = r.color(); if (color !== 'ffffffff') a.color = color;
+    const skin = r.ref(); if (skin) a.skin = skin;
+    a.parent = r.ref(); if (!r.bool()) a.deform = false;
+    sequence(); if (nonessential) { a.width = r.float(); a.height = r.float(); }
+    return a;
+  }
+  if (type === ATTACHMENT_POINT) {
+    a.type = 'point'; a.rotation = r.float(); a.x = r.float(); a.y = r.float();
+    if (nonessential) a.color = r.color(); return a;
+  }
+  if (type === ATTACHMENT_PATH) { a.type = 'path'; if (r.bool()) a.closed = true; if (!r.bool()) a.constantSpeed = false; }
+  else if (type === ATTACHMENT_CLIPPING) { a.type = 'clipping'; a.end = r.slotName(r.varint()); }
+  else if (type === ATTACHMENT_BOUNDINGBOX) a.type = 'boundingbox';
+  else throw new Unsupported(`Attachment type ${type} ('${key}')`);
+  vertices(r.varint());
+  if (type === ATTACHMENT_PATH) a.lengths = Array.from({ length: a.vertexCount / 3 }, () => r.float());
+  if (nonessential) a.color = r.color();
+  return a;
 }
 
 function readAttachment(r, flags, key, nonessential) {
@@ -1052,6 +1111,23 @@ function readAnimation(r, out, eventNames, nonessential) {
     const frames = r.varint();
     r.varint(); // bezier count
     const keys = ((anim.ik ??= {})[constraint] = []);
+    if (r.legacy) {
+      for (let f = 0; f < frames; f++) {
+        const key = { time: r.float(), mix: r.float(), softness: r.float() };
+        if (f > 0) {
+          const curve = r.byte();
+          if (curve === CURVE_STEPPED) keys[f - 1].curve = 'stepped';
+          else if (curve === CURVE_BEZIER) keys[f - 1].curve = Array.from({ length: 8 }, () => r.float());
+          else if (curve !== CURVE_LINEAR) throw new Error(`invalid curve type ${curve}`);
+        }
+        if (r.byte() === 255) key.bendPositive = false;
+        if (r.bool()) key.compress = true;
+        if (r.bool()) key.stretch = true;
+        if (!key.time) delete key.time;
+        keys.push(key);
+      }
+      continue;
+    }
     for (let f = 0; f < frames; f++) {
       const flags = r.byte();
       const key = {};
@@ -1088,7 +1164,7 @@ function readAnimation(r, out, eventNames, nonessential) {
       return TRANSFORM_KEY_MIXES.length;
     });
   }
-  for (let s = 0; s < (r.v42 ? 2 : UNKNOWN_ANIMATION_SECTIONS); s++) {
+  for (let s = 0; s < (r.legacy ? 1 : r.v42 ? 2 : UNKNOWN_ANIMATION_SECTIONS); s++) {
     if (s === ANIMATION_SECTION_PATH) readPathKeys(r, out, anim);
     else if (s === ANIMATION_SECTION_PHYSICS) readPhysicsKeys(r, out, anim);
     else readSliderKeys(r, out, anim);
@@ -1103,7 +1179,7 @@ function readAnimation(r, out, eventNames, nonessential) {
       const nAttachments = r.varint();
       for (let a = 0; a < nAttachments; a++) {
         const attachment = r.ref();
-        const type = r.byte();
+        const type = r.v40 ? ATTACHMENT_DEFORM : r.byte();
         const frames = r.varint();
         const timelines = ((((anim.attachments ??= {})[skin] ??= {})[slot] ??= {})[attachment] ??= {});
         if (type === ATTACHMENT_DEFORM) {
@@ -1127,7 +1203,7 @@ function readAnimation(r, out, eventNames, nonessential) {
     for (let k = 0; k < n; k++) key.offsets.push({ slot: out.slots[r.varint()].name, offset: r.varint() | 0 });
     (anim.drawOrder ??= []).push(key);
   }
-  if (!r.v42) {
+  if (!r.v42 && !r.legacy) {
     const folders = r.varint();
     if (folders) anim._drawOrderFolders = [];
     for (let i = 0; i < folders; i++) {
@@ -1156,7 +1232,7 @@ function readAnimation(r, out, eventNames, nonessential) {
     }
     (anim.events ??= []).push(key);
   }
-  if (!r.v42 && nonessential) {
+  if (!r.v42 && !r.legacy && nonessential) {
     const color = r.color();
     if (color !== 'ffffffff') anim._color = color;
   }
@@ -1173,9 +1249,37 @@ const BONE_INHERIT_42 = 10;
 
 /** The constraint a 4.2 (typed list) or 4.3 (unified list) index names. */
 function constraint42(r, out, type, index) {
-  const c = r.v42 ? out[type]?.[index] : out.constraints[index];
+  const c = r.v42 || r.legacy ? out[type]?.[index] : out.constraints[index];
   if (!c) throw new Error('invalid constraint index in .skel data');
   return c;
+}
+
+function readLegacyConstraints(r, out) {
+  for (const type of ['ik', 'transform', 'path']) {
+    const count = r.varint();
+    if (count) out[type] = [];
+    for (let i = 0; i < count; i++) {
+      const c = { name: r.string(), order: r.varint() };
+      if (r.bool()) c.skin = true;
+      c.bones = Array.from({ length: r.varint() }, () => out.bones[r.varint()].name);
+      c.target = type === 'path' ? out.slots[r.varint()].name : out.bones[r.varint()].name;
+      if (type === 'ik') {
+        c.mix = r.float(); c.softness = r.float();
+        if (r.byte() === 255) c.bendPositive = false;
+        if (r.bool()) c.compress = true;
+        if (r.bool()) c.stretch = true;
+        if (r.bool()) c.uniform = true;
+      } else if (type === 'transform') {
+        if (r.bool()) c.local = true;
+        if (r.bool()) c.relative = true;
+        for (const key of ['rotation', 'x', 'y', 'scaleX', 'scaleY', 'shearY', 'mixRotate', 'mixX', 'mixY', 'mixScaleX', 'mixScaleY', 'mixShearY']) c[key] = r.float();
+      } else {
+        c.positionMode = POSITION_MODES[r.varint()]; c.spacingMode = SPACING_MODES[r.varint()]; c.rotateMode = ROTATE_MODES[r.varint()];
+        for (const key of ['rotation', 'position', 'spacing', 'mixRotate', 'mixX', 'mixY']) c[key] = r.float();
+      }
+      out[type].push(c);
+    }
+  }
 }
 
 /**

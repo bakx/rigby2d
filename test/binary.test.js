@@ -75,6 +75,75 @@ const near = (a, b) => {
   return a === b;
 };
 
+test('4.2 binary reads nonessential bone metadata without consuming later fields', () => {
+  const bytes = [];
+  const byte = v => bytes.push(v);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0));
+  string('4.2.43');
+  for (const v of [0, 0, 100, 100, 100]) float(v);
+  byte(1); float(30); byte(0); byte(0); // nonessential header
+  byte(0); // string table
+  byte(2); // bones
+  string('root');
+  for (const v of [0, 0, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); string('icon'); byte(1);
+  string('child'); byte(0);
+  for (const v of [0, 10, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); byte(0); byte(1);
+  byte(0); // slots
+  bytes.push(0, 0, 0, 0); // IK, transform, path, physics
+  bytes.push(0, 0); // default and named skins
+  bytes.push(0, 0); // events and animations
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.equal(result.bones[0].icon, 'icon');
+  assert.equal(result.bones[1].parent, 'root');
+  assert.equal(result.bones[1].x, 10);
+});
+
+for (const version of ['4.0.31', '4.1.17']) {
+  test(`${version} binary reads legacy constraints, attachments and animation keys`, () => {
+    const bytes = [];
+    const byte = v => bytes.push(v & 255);
+    const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+    const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+    bytes.push(...Array(8).fill(0)); string(version);
+    for (const v of [0, 0, 100, 100]) float(v);
+    byte(1); float(30); byte(0); byte(0);
+    byte(1); string('image'); // string table
+    byte(1); string('root');
+    for (const v of [0, 0, 0, 1, 1, 0, 0, 0]) float(v);
+    byte(0); byte(0); bytes.push(155, 155, 155, 255);
+    byte(1); string('slot'); byte(0); bytes.push(...Array(8).fill(255)); byte(1); byte(0);
+    byte(1); string('ik'); byte(0); byte(0); byte(1); byte(0); byte(0);
+    float(0.5); float(2); byte(255); byte(1); byte(1); byte(0);
+    byte(0); byte(0); // transform and path
+    byte(1); byte(0); byte(1); byte(1); // default skin, slot, count, key
+    byte(0); byte(0); byte(0); // default attachment name, region, default path
+    for (const v of [0, 0, 0, 1, 1, 10, 20]) float(v);
+    bytes.push(255, 255, 255, 255); if (version.startsWith('4.1')) byte(0);
+    byte(0); byte(0); // named skins and events
+    byte(1); string('move'); byte(2); // animation and timeline count
+    byte(0); // slot timelines
+    byte(1); byte(0); byte(1); byte(0); byte(2); byte(0); // root rotate, 2 frames, no beziers
+    float(0); float(0); float(1); float(90); byte(0);
+    byte(1); byte(0); byte(2); byte(0); // IK index, two frames, no beziers
+    float(0); float(1); float(0); byte(1); byte(0); byte(0);
+    float(1); float(0.5); float(2); byte(1); byte(255); byte(1); byte(0);
+    byte(0); byte(0); // transform and path timelines
+    byte(0); byte(0); byte(0); // attachment timelines, draw order, events
+    const result = readSkeletonBinary(Uint8Array.from(bytes));
+    assert.equal(result.ik[0].bendPositive, false);
+    assert.equal(result.ik[0].softness, 2);
+    assert.equal(result.skins[0].attachments.slot.image.height, 20);
+    assert.deepEqual(result.animations.move.bones.root.rotate, [{}, { time: 1, value: 90 }]);
+    assert.equal(result.animations.move.ik.ik[0].curve, 'stepped');
+    assert.equal(result.animations.move.ik.ik[1].bendPositive, false);
+    assert.equal(result.animations.move.ik.ik[1].softness, 2);
+  });
+}
+
 const roundTrip = (fixture) => {
   const bytes = writeSkeletonBinary(structuredClone(fixture));
   assert.ok(isSkeletonBinary(bytes));
