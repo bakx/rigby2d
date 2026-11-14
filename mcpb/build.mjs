@@ -11,6 +11,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import { zipSync } from 'fflate';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stage = path.join(repo, 'build', 'mcpb');
@@ -142,12 +145,26 @@ fs.writeFileSync(path.join(stage, 'manifest.json'), `${JSON.stringify(manifest, 
 
 // ---- validate and pack ----------------------------------------------------------------------
 
-const mcpb = path.join(nm, '@anthropic-ai', 'mcpb', 'dist', 'cli', 'cli.js');
-const run = (args) => execFileSync(process.execPath, [mcpb, ...args], { cwd: repo, stdio: 'inherit' });
-run(['validate', path.join(stage, 'manifest.json')]);
+// MCPB manifest 0.3 schema from @anthropic-ai/mcpb 2.1.2 (MIT; see SCHEMA-LICENSE).
+const schema = JSON.parse(fs.readFileSync(path.join(repo, 'mcpb', 'manifest-v0.3.schema.json'), 'utf8'));
+const ajv = new Ajv({ allErrors: true, strict: false });
+addFormats(ajv);
+const validate = ajv.compile(schema);
+if (!validate(manifest)) throw new Error(`Invalid MCPB manifest: ${ajv.errorsText(validate.errors)}`);
+if (!fs.existsSync(path.join(stage, manifest.icon))) throw new Error('MCPB icon not found');
+if (!fs.existsSync(path.join(stage, manifest.server.entry_point))) throw new Error('MCPB server entry point not found');
 fs.mkdirSync(out, { recursive: true });
 const file = path.join(out, `Rigby2D-AI-${pkg.version}.mcpb`);
-fs.rmSync(file, { force: true });
-run(['pack', stage, file]);
+const entries = {};
+function addEntries(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) addEntries(full);
+    else if (e.isFile()) entries[path.relative(stage, full).split(path.sep).join('/')] = fs.readFileSync(full);
+    else throw new Error(`Unsupported bundle entry: ${full}`);
+  }
+}
+addEntries(stage);
+fs.writeFileSync(file, zipSync(entries, { level: 9 }));
 fs.copyFileSync(file, path.join(out, 'Rigby2D-AI.mcpb'));
 console.log(`\n${path.relative(repo, file)}: ${(fs.statSync(file).size / 1048576).toFixed(1)} MB, ${files.length} server files, ${listed.length} tools`);
