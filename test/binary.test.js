@@ -164,25 +164,40 @@ test('the sample robot exports to binary', () => {
   assert.equal(back.animations.length, 2);
 });
 
-test('unsupported features stop with a clear error', () => {
+test('point attachments and RGB keys round-trip, unsupported features stop clearly', () => {
   const withPoint = structuredClone(FIXTURE);
   withPoint.skins[0].attachments.body.marker = { type: 'point', x: 1, y: 2 };
-  assert.throws(() => writeSkeletonBinary(withPoint), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(withPoint)).skins[0].attachments.body.marker.type, 'point');
   const withRgb = structuredClone(FIXTURE);
   withRgb.animations.run.slots.body.rgb = [{ color: 'ff0000' }];
-  assert.throws(() => writeSkeletonBinary(withRgb), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(withRgb)).animations.run.slots.body.rgb[0].color, 'ff0000');
   const pingPong = structuredClone(FIXTURE);
   pingPong.skins[0].attachments.body.body.sequence = { count: 3 };
   pingPong.animations.run.attachments = { default: { body: { body: { sequence: [{ mode: 'pingpong', delay: 0.1 }] } } } };
-  assert.throws(() => writeSkeletonBinary(pingPong), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(pingPong)).animations.run.attachments.default.body.body.sequence[0].mode, 'pingpong');
   assert.ok(!isSkeletonBinary(new TextEncoder().encode('{"skeleton":{}}')));
+});
+
+test('4.3 constraint options, clipping and slot channels survive binary round trip', () => {
+  const json = structuredClone(FIXTURE);
+  const ik = json.constraints.find(c => c.type === 'ik');
+  Object.assign(ik, { scaleY: 'volume', compress: true, stretch: true, softness: 3, mix: 0.5 });
+  json.skins[0].attachments.body.clip = { type: 'clipping', end: 'leg', vertexCount: 3, vertices: [0, 0, 1, 0, 0, 1], convex: true, inverse: true };
+  Object.assign(json.animations.run.slots.body, { rgb: [{ color: 'aabbcc' }], rgb2: [{ light: 'aabbcc', dark: '112233' }], alpha: [{ value: 0.5 }] });
+  const back = readSkeletonBinary(writeSkeletonBinary(json));
+  assert.equal(back.constraints.find(c => c.type === 'ik').scaleY, 'volume');
+  assert.equal(back.constraints.find(c => c.type === 'ik').softness, 3);
+  assert.equal(back.skins[0].attachments.body.clip.inverse, true);
+  assert.equal(back.skins[0].attachments.body.clip.convex, true);
+  assert.equal(back.animations.run.slots.body.rgb2[0].dark, '112233');
+  assert.ok(Math.abs(back.animations.run.slots.body.alpha[0].value - 0.5) < 0.003);
 });
 
 test('sequences, sliders, path keys, weighted clipping and stepped IK round-trip through .skel', () => {
   const json = structuredClone(FIXTURE);
   const body = json.skins[0].attachments.body.body;
   body.sequence = { count: 4, start: 0, digits: 2 };
-  json.constraints.push({ type: 'slider', name: 'spin', animation: 'run', bone: 'hip', property: 'rotate', scale: 0.01, local: true, loop: true, time: 0.5 });
+  json.constraints.push({ type: 'slider', name: 'spin', animation: 'run', bone: 'hip', property: 'rotate', scale: 0.01, local: true, loop: true, max: 0.5 });
   const run = json.animations.run;
   run.attachments = { default: { body: { body: { sequence: [{ mode: 'loop', delay: 0.1 }, { time: 0.4 }, { time: 0.5, mode: 'onceReverse', index: 2, delay: 0.05 }] } } } };
   run.slider = { spin: { mix: [{}, { time: 0.5, value: 0 }] } };
