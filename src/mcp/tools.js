@@ -4,6 +4,8 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import { parseAtlas } from '../core/atlas.js';
 import { isSkeletonBinary, readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
@@ -462,9 +464,17 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
 let basisPromise;
 async function readPage(file) {
   const bytes = await fs.readFile(file);
-  if (!isKtx2(bytes)) return decodePng(bytes);
-  if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });
-  return decodeKtx2(bytes, await basisPromise);
+  if (isKtx2(bytes)) {
+    if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });
+    return decodeKtx2(bytes, await basisPromise);
+  }
+  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+    try {
+      const { stdout } = await promisify(execFile)('ffmpeg', ['-v', 'error', '-i', file, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024, windowsHide: true });
+      return decodePng(stdout);
+    } catch (e) { throw new ToolError(`Cannot decode WebP atlas page (FFmpeg required): ${e.message}`); }
+  }
+  return decodePng(bytes);
 }
 
 function straightAlpha(data) {

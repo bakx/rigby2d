@@ -84,6 +84,8 @@ Write a Rigby2D model for Defold from a character (.rigby work file, or .skel / 
 
 Render animations frame by frame into a sprite sheet for engines that play frames: 'json' writes <name>.png and <name>.json (a JSON hash as TexturePacker writes it, read by Phaser, PixiJS and others, with Aseprite frameTags, durations and a pivot at the skeleton's origin); 'defold' writes <name>/<animation>_<n>.png frames and <name>.atlas; 'frames' writes the frames only. Physics settles into loops first. Reads .rigby, or .json / .skel with its atlas. Refuses to replace files unless overwrite is true.
 
+WebP atlas pages require FFmpeg on PATH when extracting images or rendering sprite sheets with the Node tools.
+
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `input` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
