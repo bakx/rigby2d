@@ -51,6 +51,8 @@ Evaluate the skeleton with the Rigby2D runtime: the setup pose, or an animation 
 
 Check a project for problems: structure, images missing from its work file, atlas or images folder, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. *Read only.*
 
+Validation fails when required images or atlas pages are missing or cannot be decoded. JPEG and WebP decoding in the Node tools requires FFmpeg on PATH.
+
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |

@@ -178,7 +178,7 @@ export const COMMANDS = {
   validate: {
     summary: 'Check a project for problems (exit code 1 when it is invalid)',
     usage: 'rigby validate <project>',
-    details: 'Checks the structure, images missing from the work file or atlas, animations without keys, the skeleton JSON 4.3 round trip and binary .skel export.',
+    details: 'Checks structure, required image resources and atlas pages, animations without keys, the skeleton JSON 4.3 round trip and binary .skel export.',
     positionals: ['project'],
     run: ({ project }, { tools }) => callTool(tools, 'validate_project', { path: project }),
     text: validateText,

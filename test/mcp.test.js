@@ -137,15 +137,31 @@ test('mcp tools: validate finds no problems in the shipped files and reports mis
     assert.deepEqual(report.warnings, [], p);
     assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
   }
-  // Without its atlas the images cannot be checked; with an atlas missing a region they are missing.
+  // Missing resources must fail validation, including a missing atlas page.
   const lone = path.join(tmp, 'lone.json');
   await fs.copyFile(path.join(REPO, JSON_FILE), lone);
-  assert.equal((await tools.validate_project({ path: lone })).checks.images, 'not checked');
+  const noAtlas = await tools.validate_project({ path: lone });
+  assert.equal(noAtlas.valid, false);
+  assert.equal(noAtlas.checks.images, 'missing');
+  assert.match(noAtlas.errors[0], /No \.atlas or images folder/);
   const atlas = await fs.readFile(path.join(REPO, 'branding/rigbytron/export/rigbytron.atlas'), 'utf8');
   await fs.writeFile(path.join(tmp, 'lone.atlas'), atlas.replace(/^hand_e$/m, 'hand_x'));
   const report = await tools.validate_project({ path: lone });
   assert.equal(report.valid, false);
   assert.match(report.errors[0], /1 image\(s\) missing from the atlas lone.atlas: hand_e/);
+  await fs.writeFile(path.join(tmp, 'lone.atlas'), atlas);
+  const noPage = await tools.validate_project({ path: lone });
+  assert.equal(noPage.valid, false);
+  assert.equal(noPage.checks.images, 'failed');
+  assert.match(noPage.errors[0], /Unable to load required image resources/);
+  await fs.copyFile(path.join(REPO, 'branding/rigbytron/export/rigbytron.png'), path.join(tmp, 'rigbytron.png'));
+  const complete = await tools.validate_project({ path: lone });
+  assert.equal(complete.valid, true);
+  assert.equal(complete.checks.images, 'ok');
+  await fs.writeFile(path.join(tmp, 'rigbytron.png'), 'not an image');
+  const corrupt = await tools.validate_project({ path: lone });
+  assert.equal(corrupt.valid, false);
+  assert.equal(corrupt.checks.images, 'failed');
 });
 
 test('mcp tools: convert writes JSON and .skel inside the workspace only', async () => {
@@ -233,12 +249,16 @@ test('mcp edits: save to an output file and edit skeleton exports in their forma
 
   await tools.set_bone_key({ path: copy, animation: 'idle', bone: 'head', channel: 'rotate', time: 1, value: 5, curve: 'stepped' });
   assert.equal(JSON.parse(await fs.readFile(copy, 'utf8')).skeleton.spine.startsWith('4.3'), true);
-  assert.equal((await tools.validate_project({ path: copy })).valid, true);
+  const jsonValidation = await tools.validate_project({ path: copy });
+  assert.equal(jsonValidation.checks.structure, 'ok');
+  assert.equal(jsonValidation.valid, false); // Skeleton-only copy has no artwork.
 
   await tools.set_event_key({ path: skel, animation: 'release', event: 'slash', time: 0.42, int: 3 });
   const release = await tools.describe_animation({ path: skel, animation: 'release' });
   assert.deepEqual(release.events, [{ time: 0.42, name: 'slash' }], 'an event key at the same time is replaced');
-  assert.equal((await tools.validate_project({ path: skel })).valid, true);
+  const binaryValidation = await tools.validate_project({ path: skel });
+  assert.equal(binaryValidation.checks.structure, 'ok');
+  assert.equal(binaryValidation.valid, false);
 });
 
 test('mcp server: answers over stdio', async () => {

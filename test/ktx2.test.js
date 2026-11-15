@@ -66,7 +66,9 @@ test('Node project tools unpack KTX2 atlas regions', async () => {
     assert.equal(image.width, 16);
     assert.equal(image.height, 16);
     assert.ok(image.rgba[0] > 180 && image.rgba[1] < 70 && image.rgba[3] > 110 && image.rgba[3] < 145);
-    const tool = createTools(await Workspace.open([dir])).find(t => t.name === 'export_sprite_sheet');
+    const tools = createTools(await Workspace.open([dir]));
+    assert.equal((await tools.find(t => t.name === 'validate_project').handler({ path: file })).valid, true);
+    const tool = tools.find(t => t.name === 'export_sprite_sheet');
     await tool.handler({ input: file, output_folder: dir, name: 'sheet', fps: 2 });
     const sheet = decodePng(await fs.readFile(path.join(dir, 'sheet.png')));
     assert.ok(sheet.data.some((v, i) => i % 4 === 3 && v > 0));

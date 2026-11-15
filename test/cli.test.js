@@ -138,9 +138,11 @@ test('cli: inspect, rig, animation, pose and validate', async () => {
   const valid = await rigby('validate', RIGBY);
   assert.equal(valid.code, 0);
   assert.match(valid.out, /^valid: /);
-  // A skeleton without its images is checked, but not failed for that.
+  // A skeleton without its images cannot pass render-ready validation.
   const turn = await rigby('validate', TURN, '--json');
   assert.equal(turn.json.checks.structure, 'ok');
+  assert.equal(turn.json.valid, false);
+  assert.equal(turn.code, 1);
 });
 
 test('cli: validate exits with 1 for an invalid project', async () => {

@@ -23,9 +23,32 @@ test('Node project tools unpack and render WebP atlas pages', async t => {
     await fs.writeFile(file, JSON.stringify(model));
     const images = await projectImages(await loadProject(file), new Set(['body']));
     assert.ok(images.get('body').rgba[0] > 180);
-    const tool = createTools(await Workspace.open([dir])).find(x => x.name === 'export_sprite_sheet');
+    const tools = createTools(await Workspace.open([dir]));
+    assert.equal((await tools.find(x => x.name === 'validate_project').handler({ path: file })).valid, true);
+    const tool = tools.find(x => x.name === 'export_sprite_sheet');
     await tool.handler({ input: file, output_folder: dir, name: 'sheet', fps: 2 });
     const sheet = decodePng(await fs.readFile(path.join(dir, 'sheet.png')));
     assert.ok(sheet.data.some((v, i) => i % 4 === 3 && v > 0));
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('validation decodes loose JPEG images when FFmpeg is available', async t => {
+  const check = spawnSync('ffmpeg', ['-version'], { windowsHide: true });
+  if (check.error?.code === 'ENOENT') { t.skip('FFmpeg is not installed'); return; }
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rigby-jpeg-test-'));
+  try {
+    const folder = path.join(dir, 'images');
+    await fs.mkdir(folder);
+    const webp = Buffer.from('UklGRh4AAABXRUJQVlA4TBEAAAAvD8ADAAdQlCKXp/+BiOh/AAA=', 'base64');
+    const encoded = spawnSync('ffmpeg', ['-v', 'error', '-f', 'webp_pipe', '-i', 'pipe:0', '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'], { input: webp, windowsHide: true });
+    assert.equal(encoded.status, 0, encoded.stderr.toString());
+    await fs.writeFile(path.join(folder, 'body.jpg'), encoded.stdout);
+    const model = { skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 'slot', bone: 'root', attachment: 'body' }], skins: [{ name: 'default', attachments: { slot: { body: { width: 16, height: 16 } } } }] };
+    const file = path.join(dir, 'model.json');
+    await fs.writeFile(file, JSON.stringify(model));
+    const tools = createTools(await Workspace.open([dir]));
+    const report = await tools.find(x => x.name === 'validate_project').handler({ path: file });
+    assert.equal(report.valid, true, report.errors.join('; '));
+    assert.equal(report.checks.images, 'ok');
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

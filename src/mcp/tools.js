@@ -366,7 +366,7 @@ function sameData(a, b) {
   return true;
 }
 
-function validate(p) {
+async function validate(p) {
   const { doc } = p;
   const errors = [];
   const warnings = [...p.warnings];
@@ -375,12 +375,34 @@ function validate(p) {
 
   const needed = usedImages(doc);
   let missingImages = [];
+  let imageCheck = 'ok';
   if (p.images) {
     const have = new Set(p.images);
     missingImages = needed.filter((n) => !have.has(n));
-    if (missingImages.length) errors.push(`${missingImages.length} image(s) missing from the ${p.imageSource}: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
+    if (missingImages.length) {
+      imageCheck = 'missing';
+      errors.push(`${missingImages.length} image(s) missing from the ${p.imageSource}: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
+    }
   } else if (needed.length) {
-    warnings.push(`No .atlas or images folder found next to the file, so the ${needed.length} image(s) it uses were not checked.`);
+    imageCheck = 'missing';
+    errors.push(`No .atlas or images folder found for the ${needed.length} required image(s).`);
+  }
+  if (p.images && needed.length) {
+    try {
+      const found = await projectImages(p, new Set(needed));
+      for (const name of needed) {
+        const picture = found.get(name);
+        if (!picture) {
+          if (!missingImages.includes(name)) {
+            imageCheck = 'missing';
+            errors.push(`Required image '${name}' could not be loaded from the ${p.imageSource}.`);
+          }
+        } else if (picture.bytes) decodePng(picture.bytes);
+      }
+    } catch (e) {
+      imageCheck = 'failed';
+      errors.push(`Unable to load required image resources: ${e.message}`);
+    }
   }
 
   for (const a of doc.animations) {
@@ -414,7 +436,7 @@ function validate(p) {
     valid: errors.length === 0,
     errors,
     warnings,
-    checks: { structure: structure ? 'failed' : 'ok', images: p.images ? (missingImages.length ? 'missing' : 'ok') : 'not checked', jsonRoundTrip: roundTrip, binaryExport },
+    checks: { structure: structure ? 'failed' : 'ok', images: imageCheck, jsonRoundTrip: roundTrip, binaryExport },
   };
 }
 
@@ -468,11 +490,13 @@ async function readPage(file) {
     if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });
     return decodeKtx2(bytes, await basisPromise);
   }
-  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+  const webp = bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+  const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (webp || jpeg) {
     try {
       const { stdout } = await promisify(execFile)('ffmpeg', ['-v', 'error', '-i', file, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024, windowsHide: true });
       return decodePng(stdout);
-    } catch (e) { throw new ToolError(`Cannot decode WebP atlas page (FFmpeg required): ${e.message}`); }
+    } catch (e) { throw new ToolError(`Cannot decode ${webp ? 'WebP' : 'JPEG'} image (FFmpeg required): ${e.message}`); }
   }
   return decodePng(bytes);
 }
@@ -506,8 +530,13 @@ export async function projectImages(p, names) {
   } else if (p.imageSource?.startsWith('folder ')) {
     const imagesDir = path.join(dir, p.imageSource.slice(7));
     for (const n of names) {
-      const bytes = await fs.readFile(path.join(imagesDir, `${n}.png`)).catch(() => null);
-      if (bytes) images.set(n, { bytes });
+      for (const ext of ['png', 'jpg', 'jpeg']) {
+        const file = path.join(imagesDir, `${n}.${ext}`);
+        if (!(await fs.stat(file).then(s => s.isFile(), () => false))) continue;
+        if (ext === 'png') images.set(n, { bytes: await fs.readFile(file) });
+        else { const image = await readPage(file); images.set(n, { width: image.width, height: image.height, rgba: image.data }); }
+        break;
+      }
     }
   }
   return images;
