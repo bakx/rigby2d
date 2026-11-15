@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | `.rigby` | The work file: a ZIP with `project.json` (the whole document) and `images/*.png`, plus `audio/*` for audio tracks. | *File ▸ Save* |
 | `.json` | Skeleton JSON, format 3.8, 4.2 or 4.3. | *Export ▸ JSON + atlas* |
-| `.skel` | Binary skeleton: reads formats 4.2 and 4.3; writes 4.3. | *Export ▸ Binary .skel + atlas* |
+| `.skel` | Binary skeleton: reads formats 4.0, 4.2 and 4.3; writes 4.3. | *Export ▸ Binary .skel + atlas* |
 | `.atlas` + image pages | Texture atlas: the packed images and where each one sits. | Every export |
 | `.scene.json` | A scene for runtimes: actors, clips and depths, naming the stage and character skeletons next to it. | *Export ▸ Scene for runtimes* |
 
