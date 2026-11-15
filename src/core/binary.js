@@ -757,8 +757,10 @@ function readSkin(r, out, nonessential) {
 function readAttachment(r, flags, key, nonessential) {
   const type = flags & 0x07;
   if (type === ATTACHMENT_BOUNDINGBOX || type === ATTACHMENT_CLIPPING) {
-    if ((flags & ~VERTICES_WEIGHTED) !== type) throw new Unsupported(`Attachment options (flags 0x${flags.toString(16)}) on '${key}'`);
+    const convexFlag = type === ATTACHMENT_CLIPPING && !r.v42 ? 0x20 : 0;
+    if ((flags & ~(VERTICES_WEIGHTED | convexFlag)) !== type) throw new Unsupported(`Attachment options (flags 0x${flags.toString(16)}) on '${key}'`);
     const a = { type: type === ATTACHMENT_CLIPPING ? 'clipping' : 'boundingbox' };
+    if (convexFlag && (flags & convexFlag)) a.convex = true;
     if (type === ATTACHMENT_CLIPPING) a.end = r.slotName(r.varint());
     readVertices(r, a, !!(flags & VERTICES_WEIGHTED));
     if (nonessential) setColor(a, r.color());
@@ -1598,7 +1600,8 @@ function writeVertexAttachment(w, key, a, type, slotIndex) {
     if (weighted) flags |= PATH_WEIGHTED;
     w.byte(flags);
   } else {
-    w.byte((type === 'clipping' ? ATTACHMENT_CLIPPING : ATTACHMENT_BOUNDINGBOX) | (weighted ? VERTICES_WEIGHTED : 0));
+    if (type === 'clipping' && a.inverse) throw new Unsupported('Inverse clipping');
+    w.byte((type === 'clipping' ? ATTACHMENT_CLIPPING : ATTACHMENT_BOUNDINGBOX) | (weighted ? VERTICES_WEIGHTED : 0) | (type === 'clipping' && a.convex ? 0x20 : 0));
   }
   if (type === 'clipping') w.varint(slotIndex.get(a.end));
   w.varint(count);

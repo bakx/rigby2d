@@ -136,6 +136,18 @@ test('binary round trip with constraints, skins and every supported attachment t
   assert.ok(near(back, RICH), JSON.stringify(back).slice(0, 600));
 });
 
+test('4.3 binary preserves convex clipping metadata', () => {
+  const json = structuredClone(RICH);
+  json.skins[0].attachments.mask.mask.convex = true;
+  const back = roundTrip(json);
+  assert.equal(back.skins[0].attachments.mask.mask.convex, true);
+  const model = readSkeletonJson(back).skeleton;
+  const exported = writeSkeletonJson(model, { version: '4.3', binary: true }).json;
+  assert.equal(exported.skins[0].attachments.mask.mask.convex, true);
+  json.skins[0].attachments.mask.mask.inverse = true;
+  assert.throws(() => writeSkeletonBinary(json), /Inverse clipping/);
+});
+
 test('the document model loads the rich fixture from binary', () => {
   const { skeleton } = readSkeletonJson(roundTrip(RICH), 'rich');
   assert.equal(skeleton.skins.length, 1);
