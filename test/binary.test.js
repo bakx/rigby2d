@@ -242,3 +242,25 @@ test('transform constraint options (local source / target, additive, clamp) roun
   const back = readSkeletonBinary(bytes).constraints.find((x) => x.name === 't');
   assert.deepEqual([back.localSource, back.localTarget, back.additive], [true, true, true]);
 });
+
+test('reads 4.2 binary bone metadata without misaligning the skeleton', () => {
+  const bytes = [];
+  const byte = v => bytes.push(v);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0)); string('4.2.43');
+  for (const v of [0, 0, 100, 100, 100]) float(v);
+  byte(1); float(30); byte(0); byte(0);
+  byte(0); byte(2); string('root');
+  for (const v of [0, 0, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); string('icon'); byte(1);
+  string('child'); byte(0);
+  for (const v of [0, 10, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); byte(0); byte(1);
+  bytes.push(0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.equal(result.bones[0].icon, 'icon');
+  assert.equal(result.bones[1].parent, 'root');
+  assert.equal(result.bones[1].x, 10);
+  assert.equal(readSkeletonJson(result).skeleton.bones.length, 2);
+});
