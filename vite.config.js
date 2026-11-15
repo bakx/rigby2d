@@ -6,6 +6,8 @@ import { defineConfig } from 'vite';
 // during development and copied into the build, so scripts work offline.
 const PYODIDE_FILES = ['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
 const PYODIDE_DIR = path.resolve('node_modules/pyodide');
+const BASIS_FILES = ['basis_encoder.js', 'basis_encoder.wasm'];
+const BASIS_DIR = path.resolve('node_modules/ktx2-encoder/dist/basis');
 const MIME = { '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.zip': 'application/zip', '.json': 'application/json' };
 
 function pyodideAssets() {
@@ -13,6 +15,12 @@ function pyodideAssets() {
     name: 'rigby-pyodide-assets',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        const basis = /^\/basis\/([^?]+)/.exec(req.url ?? '');
+        if (basis && BASIS_FILES.includes(basis[1])) {
+          res.setHeader('Content-Type', basis[1].endsWith('.js') ? 'text/javascript' : 'application/wasm');
+          fs.createReadStream(path.join(BASIS_DIR, basis[1])).pipe(res);
+          return;
+        }
         const m = /^\/pyodide\/([^?]+)/.exec(req.url ?? '');
         if (!m || !PYODIDE_FILES.includes(m[1])) return next();
         res.setHeader('Content-Type', MIME[path.extname(m[1])] ?? 'application/octet-stream');
@@ -21,6 +29,7 @@ function pyodideAssets() {
     },
     generateBundle() {
       for (const file of PYODIDE_FILES) this.emitFile({ type: 'asset', fileName: `pyodide/${file}`, source: fs.readFileSync(path.join(PYODIDE_DIR, file)) });
+      for (const file of BASIS_FILES) this.emitFile({ type: 'asset', fileName: `basis/${file}`, source: fs.readFileSync(path.join(BASIS_DIR, file)) });
     },
   };
 }

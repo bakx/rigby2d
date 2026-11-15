@@ -6,6 +6,7 @@
 import { Animation, setKey } from '../core/animation.js';
 import { atlasFilter, parseAtlas, regionPlacement, textureFilterOf, writeAtlas } from '../core/atlas.js';
 import { readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
+import { isKtx2 } from '../core/ktx2.js';
 import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/interop.js';
 
 import { STEPPED } from '../core/curve.js';
@@ -15,6 +16,7 @@ import { Pose } from '../core/pose.js';
 import { sequenceFrameName } from '../core/sequence.js';
 import { Skeleton, makeAttachment, makeSlot, uniqueName } from '../core/model.js';
 import { pack } from './pack.js';
+import { decodeKtx2 } from './ktx2.js';
 import { unzip, zip } from './zip.js';
 import { dragonBonesToSkeleton, isDragonBones, isDragonBonesAtlas } from './dragonbones.js';
 import { alphaBounds, backToFront, fileName, isLayerSet, layerCenter, layerName, pixelArtScale } from './pngset.js';
@@ -55,6 +57,15 @@ export function joinPath(dir, rel) {
 // ---- PNG coding -------------------------------------------------------------------------------
 
 export async function decodeImage(bytes) {
+  if (isKtx2(bytes)) {
+    const image = await decodeKtx2(bytes);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(image.data.buffer, image.data.byteOffset, image.width * image.height * 4), image.width, image.height), 0, 0);
+    if (image.pma) canvas.premultiplied = true;
+    return canvas;
+  }
   const bitmap = await createImageBitmap(new Blob([bytes]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   const canvas = document.createElement('canvas');
   canvas.width = bitmap.width;
@@ -330,7 +341,7 @@ async function openSkeletonJson(path, fs, obj, images) {
         warnings.push(`atlas page ${page.name}: ${e}`);
         continue;
       }
-      if (page.pma) unpremultiply(sheet);
+      if (page.pma || sheet.premultiplied) unpremultiply(sheet);
       for (const r of page.regions) loaded.set(r.index >= 0 ? `${r.name}${r.index}` : r.name, extractRegion(sheet, r));
     }
   }
