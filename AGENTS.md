@@ -1,5 +1,9 @@
 # Rigby2D automation guide
 
+## Upstream-first development
+
+Rigby2D upstream leads this project. Build on and extend upstream code and behavior, carry forward our additional capabilities, and avoid parallel implementations when upstream provides the same feature. When integrating upstream changes, preserve compatibility where practical and document intentional behavior changes.
+
 Rigby2D edits 2D skeletal animation for games and film. Start by reading the project with
 `inspect_project`, then `describe_rig` and `describe_animation`. These tools operate on files;
 they do not change an already-open editor document. Reload that document after external edits.
