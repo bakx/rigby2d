@@ -135,8 +135,8 @@ export async function loadProject(file) {
   } catch (e) {
     throw new ToolError(`Cannot read skeleton: ${e.message}`);
   }
-  const { images, imageSource } = await findImages(file, stem, obj, usedImages(read.skeleton));
-  return { file, format: ext === '.json' ? 'json' : 'skel', version: read.skeleton.header?.version ?? null, doc: read.skeleton, warnings: read.warnings, images, imageSource };
+  const { images, imageSource, atlas } = await findImages(file, stem, obj, usedImages(read.skeleton));
+  return { file, format: ext === '.json' ? 'json' : 'skel', version: read.skeleton.header?.version ?? null, doc: read.skeleton, warnings: read.warnings, images, imageSource, atlas };
 }
 
 /**
@@ -152,17 +152,17 @@ async function findImages(file, stem, obj, needed) {
   const want = new Set(needed);
   let best = null;
   for (const name of candidates) {
-    let regions;
+    let regions, atlas;
     try {
-      const atlas = parseAtlas(await fs.readFile(path.join(dir, name), 'utf8'));
+      atlas = parseAtlas(await fs.readFile(path.join(dir, name), 'utf8'));
       regions = atlas.pages.flatMap((p) => p.regions.map((r) => (r.index >= 0 ? `${r.name}${r.index}` : r.name)));
     } catch {
       continue;
     }
     const covered = regions.filter((r) => want.has(r)).length;
-    if (!best || covered > best.covered) best = { name, regions, covered };
+    if (!best || covered > best.covered) best = { name, regions, covered, atlas };
   }
-  if (best) return { images: best.regions, imageSource: `atlas ${best.name}` };
+  if (best) return { images: best.regions, imageSource: `atlas ${best.name}`, atlas: best.atlas };
   const folder = path.join(dir, (obj.skeleton?.images ?? '').trim() || 'images');
   const files = await listImagesRecursive(folder);
   return files ? { images: files, imageSource: `folder ${path.relative(dir, folder) || '.'}` } : { images: null, imageSource: null };
@@ -204,6 +204,7 @@ function summary(p) {
     name: doc.name,
     workspace: doc.workspace ?? (p.format === 'rigby' ? 'default' : 'game'),
     ...(doc.textureFilter !== 'linear' ? { textureFilter: doc.textureFilter } : {}),
+    ...(p.atlas ? { atlasPages: p.atlas.pages.map(pg => ({ file: pg.name, format: path.extname(pg.name).slice(1).toLowerCase(), width: pg.width, height: pg.height, pma: pg.pma, regions: pg.regions.length })) } : {}),
     counts: {
       bones: doc.bones.length,
       slots: doc.slots.length,
@@ -406,6 +407,23 @@ async function validate(p) {
     }
   }
 
+  let pages = 'not checked';
+  if (p.atlas) {
+    pages = 'ok';
+    if (!p.atlas.pages.length) { pages = 'failed'; errors.push('The atlas contains no pages.'); }
+    for (const page of p.atlas.pages) {
+      try {
+        const image = await readPage(path.join(path.dirname(p.file), page.name));
+        const slack = /\.ktx2$/i.test(page.name) ? 3 : 0;
+        const fits = (actual, declared) => actual >= declared && actual <= declared + slack;
+        if (page.width && page.height && (!fits(image.width, page.width) || !fits(image.height, page.height))) throw new Error(`image is ${image.width}×${image.height}, but atlas declares ${page.width}×${page.height}`);
+      } catch (e) {
+        pages = 'failed';
+        errors.push(`Atlas page '${page.name}': ${e.code === 'ENOENT' ? 'file is missing' : e.message}.`);
+      }
+    }
+  }
+
   for (const a of doc.animations) {
     if (!timelineCount(a)) warnings.push(`Animation '${a.name}' has no keys.`);
   }
@@ -437,7 +455,7 @@ async function validate(p) {
     valid: errors.length === 0,
     errors,
     warnings,
-    checks: { structure: structure ? 'failed' : 'ok', images: imageCheck, jsonRoundTrip: roundTrip, binaryExport },
+    checks: { structure: structure ? 'failed' : 'ok', images: imageCheck, atlasPages: pages, jsonRoundTrip: roundTrip, binaryExport },
   };
 }
 
@@ -514,8 +532,7 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false, 
 async function encodeAtlasPage(page, format, options) {
   if (format === 'png') return encodePng(page);
   if (format === 'ktx2') {
-    if (!basisPromise) basisPromise = import(new URL('../basis/basis_encoder.js', import.meta.resolve('ktx2-encoder')).href).then(({ default: create }) => create({ print() {}, printErr() {} })).then(b => { b.initializeBasis(); return b; }).catch(e => { basisPromise = null; throw e; });
-    return encodeKtx2(page, options, await basisPromise);
+    return encodeKtx2(page, options, await basisModule());
   }
   return new Promise((resolve, reject) => {
     const child = spawn('ffmpeg', ['-v', 'error', '-f', 'image2pipe', '-vcodec', 'png', '-i', 'pipe:0', '-frames:v', '1', '-c:v', 'libwebp', '-lossless', '1', '-f', 'webp', 'pipe:1'], { windowsHide: true });
@@ -532,12 +549,13 @@ async function encodeAtlasPage(page, format, options) {
 // ---- images -----------------------------------------------------------------------------------
 
 let basisPromise;
+function basisModule() {
+  if (!basisPromise) basisPromise = import(new URL('../basis/basis_encoder.js', import.meta.resolve('ktx2-encoder')).href).then(({ default: create }) => create({ print() {}, printErr() {} })).then(b => { b.initializeBasis(); return b; }).catch(e => { basisPromise = null; throw e; });
+  return basisPromise;
+}
 export async function readPage(file) {
   const bytes = await fs.readFile(file);
-  if (isKtx2(bytes)) {
-    if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });
-    return decodeKtx2(bytes, await basisPromise);
-  }
+  if (isKtx2(bytes)) return decodeKtx2(bytes, await basisModule());
   const webp = bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
   const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   if (webp || jpeg) {
@@ -730,7 +748,7 @@ export function createTools(ws) {
     {
       name: 'inspect_project',
       title: 'Inspect project',
-      description: 'Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, the animations with their durations, and any read warnings.',
+      description: 'Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, atlas-page metadata, animation durations, and read warnings.',
       inputSchema: { type: 'object', properties: { path: PATH }, required: ['path'], additionalProperties: false },
       annotations: READ_ONLY,
       handler: async ({ path: p }) => summary(await load(p)),
@@ -780,7 +798,7 @@ export function createTools(ws) {
     {
       name: 'validate_project',
       title: 'Validate project',
-      description: 'Check a project for problems: structure, images missing from its work file, atlas or images folder, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible.',
+      description: 'Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas page availability and dimensions, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible.',
       inputSchema: { type: 'object', properties: { path: PATH }, required: ['path'], additionalProperties: false },
       annotations: READ_ONLY,
       handler: async ({ path: p }) => validate(await load(p)),

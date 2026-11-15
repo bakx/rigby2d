@@ -136,7 +136,7 @@ test('mcp tools: validate finds no problems in the shipped files and reports mis
     const report = await tools.validate_project({ path: p });
     assert.equal(report.valid, true, p);
     assert.deepEqual(report.warnings, [], p);
-    assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
+    assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', atlasPages: p === RIGBY ? 'not checked' : 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
   }
   // Missing resources must fail validation, including a missing atlas page.
   const lone = path.join(tmp, 'lone.json');

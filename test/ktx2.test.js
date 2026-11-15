@@ -144,6 +144,17 @@ test('packed KTX2 export writes a loadable atlas and PNG fallback and rejects mi
     assert.ok(isKtx2(await fs.readFile(path.join(dir, 'result.ktx2'))));
     assert.ok((await projectImages(await loadProject(output), new Set(['body']))).has('body'));
     assert.ok(decodePng(await fs.readFile(path.join(dir, 'result.png'))).width > 0);
+    const script = `
+      import { Workspace, createTools } from './src/mcp/tools.js';
+      const ws = await Workspace.open([process.argv[1]]);
+      const tools = Object.fromEntries(createTools(ws).map(t => [t.name, t.handler]));
+      const checked = await tools.validate_project({ path: 'source.json' });
+      if (!checked.valid) throw new Error(JSON.stringify(checked.errors));
+      await tools.convert_project({ input: 'source.json', output: 'mcp.json', atlas: true, texture_format: 'ktx2' });
+      process.stdout.write('ok');
+    `;
+    const child = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script, dir], { cwd: process.cwd() });
+    assert.equal(child.stdout, 'ok');
     await fs.unlink(path.join(dir, 'source.ktx2'));
     await assert.rejects(exportWithAtlas(input, path.join(dir, 'missing.json'), { texture: 'ktx2' }), /ENOENT|missing/);
     await assert.rejects(fs.access(path.join(dir, 'missing.json')));
