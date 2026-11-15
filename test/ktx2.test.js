@@ -7,10 +7,16 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright';
+import http from 'node:http';
+import { createServer as createViteServer } from 'vite';
 import { NodeBasisEncoder } from 'ktx2-encoder';
-import { decodeKtx2, isKtx2 } from '../src/core/ktx2.js';
+import { decodeKtx2, encodeKtx2, isKtx2, TRANSCODE, transcodeKtx2 } from '../src/core/ktx2.js';
 import { createTools, loadProject, projectImages, Workspace } from '../src/mcp/tools.js';
 import { decodePng } from '../src/mcp/png.js';
+import { exportWithAtlas } from '../src/cli/project.js';
+import { main } from '../src/cli/main.js';
+import { WebGLRenderer } from '../src/webgl/renderer.js';
+import { ktx2Target } from '../src/webgl/ktx2.js';
 
 async function encoded(basis, uastc, pixel = [220, 30, 40, 255]) {
   const width = 16, height = 16;
@@ -95,4 +101,94 @@ test('editor loads and renders a KTX2 atlas', async t => {
     assert.equal(result.stages.images.loaded, 1);
     assert.equal(result.stages.render.nonempty, 2);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+
+test('KTX2 encoding round trips both codecs and preserves alpha metadata', async () => {
+  const basis = await new NodeBasisEncoder().init();
+  const data = new Uint8Array(16 * 16 * 4);
+  for (let i = 0; i < data.length; i += 4) data.set([80, 25, 10, 128], i);
+  for (const codec of ['etc1s', 'uastc']) {
+    const bytes = await encodeKtx2({ width: 16, height: 16, data }, { codec, mipmaps: true, pma: true }, basis);
+    assert.ok(isKtx2(bytes));
+    const image = await decodeKtx2(bytes, basis);
+    assert.equal(image.pma, true);
+    assert.equal(image.width, 16);
+    assert.ok(image.data[0] > 55 && image.data[3] > 110 && image.data[3] < 145);
+    const compressed = await transcodeKtx2(bytes, TRANSCODE.etc2, basis);
+    assert.ok(compressed.data.length > 0);
+  }
+  await assert.rejects(encodeKtx2({ width: 16, height: 16, data }, { codec: 'bad' }, basis), /codec/);
+  await assert.rejects(encodeKtx2({ width: 16, height: 16, data: data.subarray(1) }, {}, basis), /RGBA/);
+});
+
+test('KTX2 GPU target selects supported compressed formats or RGBA', () => {
+  assert.deepEqual(ktx2Target({ getExtension: name => name === 'WEBGL_compressed_texture_astc' }), { format: TRANSCODE.astc, glFormat: 0x93b0 });
+  assert.deepEqual(ktx2Target({ getExtension: () => false }), { format: TRANSCODE.rgba, glFormat: null });
+});
+
+test('packed KTX2 export writes a loadable atlas and PNG fallback and rejects missing artwork', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rigby-ktx-export-'));
+  try {
+    const basis = await new NodeBasisEncoder().init();
+    await fs.writeFile(path.join(dir, 'source.ktx2'), await encoded(basis, false));
+    await fs.writeFile(path.join(dir, 'source.atlas'), 'source.ktx2\nsize: 16,16\nfilter: Linear,Linear\nrepeat: none\nbody\n  bounds: 0,0,16,16\n');
+    const model = { skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 'slot', bone: 'root', attachment: 'body' }], skins: [{ name: 'default', attachments: { slot: { body: { width: 16, height: 16 } } } }] };
+    const input = path.join(dir, 'source.json');
+    await fs.writeFile(input, JSON.stringify(model));
+    const output = path.join(dir, 'result.json');
+    let errors = '';
+    const code = await main(['export', input, '--out', output, '--texture', 'ktx2', '--codec', 'uastc', '--fallback'], { stdout: () => {}, stderr: text => { errors += text; } });
+    assert.equal(code, 0, errors);
+    assert.match(await fs.readFile(path.join(dir, 'result.atlas'), 'utf8'), /result\.ktx2/);
+    assert.ok(isKtx2(await fs.readFile(path.join(dir, 'result.ktx2'))));
+    assert.ok((await projectImages(await loadProject(output), new Set(['body']))).has('body'));
+    assert.ok(decodePng(await fs.readFile(path.join(dir, 'result.png'))).width > 0);
+    await fs.unlink(path.join(dir, 'source.ktx2'));
+    await assert.rejects(exportWithAtlas(input, path.join(dir, 'missing.json'), { texture: 'ktx2' }), /ENOENT|missing/);
+    await assert.rejects(fs.access(path.join(dir, 'missing.json')));
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+
+
+test('editor worker encodes a KTX2 page that its loader can decode', async t => {
+  try { await fs.access(chromium.executablePath()); } catch { t.skip('Playwright Chromium is not installed'); return; }
+  const vite = await createViteServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' });
+  const server = http.createServer((req, res) => {
+    if (req.url === '/') { res.end('<!doctype html>'); return; }
+    vite.middlewares(req, res);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    const result = await page.evaluate(async () => {
+      const { encodeKtx2, decodeKtx2 } = await import('/src/editor/ktx2.js');
+      const data = new Uint8ClampedArray(16 * 16 * 4);
+      for (let i = 0; i < data.length; i += 4) data.set([200, 20, 30, 255], i);
+      const bytes = await encodeKtx2({ width: 16, height: 16, data }, { codec: 'uastc' });
+      const image = await decodeKtx2(bytes);
+      return { width: image.width, red: image.data[0], alpha: image.data[3] };
+    });
+    assert.equal(result.width, 16);
+    assert.ok(result.red > 170 && result.alpha > 240);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); await vite.close(); }
+});
+
+
+test('WebGL uploads compressed KTX2 blocks and restores unpack state', () => {
+  const uploads = [], states = [];
+  const gl = { TEXTURE_2D: 1, UNPACK_FLIP_Y_WEBGL: 2, UNPACK_PREMULTIPLY_ALPHA_WEBGL: 3,
+    LINEAR: 4, TEXTURE_MAG_FILTER: 5, TEXTURE_MIN_FILTER: 6, TEXTURE_WRAP_S: 7, TEXTURE_WRAP_T: 8, CLAMP_TO_EDGE: 9,
+    createTexture: () => ({}), bindTexture: () => {}, getParameter: () => true,
+    pixelStorei: (...args) => states.push(args), compressedTexImage2D: (...args) => uploads.push(args), texParameteri: () => {},
+    generateMipmap: () => assert.fail('compressed mip levels were not uploaded') };
+  const data = new Uint8Array(16);
+  const texture = WebGLRenderer.prototype.createTexture.call({ gl }, { width: 4, height: 4, data, glFormat: 0x9278 }, { mipmaps: true });
+  assert.equal(uploads[0][2], 0x9278);
+  assert.equal(uploads[0][6], data);
+  assert.deepEqual(states, [[2, false], [3, false], [2, true], [3, true]]);
+  assert.equal(texture.width, 4);
 });

@@ -3,7 +3,7 @@
 let worker;
 let next = 0;
 const pending = new Map();
-export function decodeKtx2(bytes) {
+function request(message) {
   if (!worker) {
     worker = new Worker(new URL('./ktx2.worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
@@ -20,6 +20,9 @@ export function decodeKtx2(bytes) {
   return new Promise((resolve, reject) => {
     const id = next++;
     pending.set(id, { resolve, reject });
-    worker.postMessage({ id, bytes });
+    worker.postMessage({ id, ...message });
   });
 }
+
+export const decodeKtx2 = bytes => request({ operation: 'decode', bytes });
+export const encodeKtx2 = (image, options) => request({ operation: 'encode', image, options });

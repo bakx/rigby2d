@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-import { decodeKtx2 } from '../core/ktx2.js';
+import { decodeKtx2, encodeKtx2 } from '../core/ktx2.js';
 
 let basisPromise;
 function basisModule() {
@@ -15,9 +15,10 @@ function basisModule() {
   })().catch(error => { basisPromise = null; throw error; });
   return basisPromise;
 }
-self.onmessage = async ({ data: { id, bytes } }) => {
+self.onmessage = async ({ data: { id, bytes, operation, image, options } }) => {
   try {
-    const result = await decodeKtx2(bytes, await basisModule());
-    self.postMessage({ id, result }, [result.data.buffer]);
+    const basis = await basisModule();
+    const result = operation === 'encode' ? await encodeKtx2(image, options, basis) : await decodeKtx2(bytes, basis);
+    self.postMessage({ id, result }, [operation === 'encode' ? result.buffer : result.data.buffer]);
   } catch (e) { self.postMessage({ id, error: e.message }); }
 };

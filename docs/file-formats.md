@@ -22,7 +22,7 @@ order, attachments live in skins, and animations hold timelines with keys relati
 pose. Images come from the `.atlas` or from loose files in the skeleton's `images` folder.
 
 The editor reads PNG, JPEG, WebP and Basis Universal KTX2 atlas pages. Node-based image extraction
-and sprite-sheet exports support PNG and KTX2 pages, and WebP pages when FFmpeg is on PATH. Some
+and sprite-sheet exports support PNG and KTX2 pages, and WebP pages when FFmpeg is on PATH. The editor can export KTX2 pages with PNG fallbacks; the CLI supports `--texture ktx2` with ETC1S or UASTC, mipmaps, and optional PNG fallback. The KTX2 encoder and transcoder support Basis Universal textures. Some
 binary attachment and animation options remain unsupported; these report an error instead of being
 silently omitted. Exported data should be checked in its target runtime.
 

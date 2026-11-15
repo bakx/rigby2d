@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { atlasFilter, writeAtlas } from '../core/atlas.js';
+import { encodeKtx2 } from '../core/ktx2.js';
 import { writeSkeletonBinary } from '../core/binary.js';
 import { writeSkeletonJson } from '../core/interop.js';
 import { usedImages } from '../editor/io.js';
@@ -83,7 +84,8 @@ export async function psdToWorkfile(input, output, { force = false } = {}) {
  * every image the skeleton uses packed into `<name>.atlas` and `<name>.png` next to it.
  * Returns { output, atlas, page, size, regions, missingImages, warnings }.
  */
-export async function exportWithAtlas(input, output, { version = '4.3', force = false } = {}) {
+export async function exportWithAtlas(input, output, { version = '4.3', force = false, texture = 'png', codec = 'etc1s', quality = 128, mipmaps = false, zstd = true, fallback = false } = {}) {
+  if (!['png', 'ktx2'].includes(texture)) throw new ToolError('Texture must be png or ktx2.');
   const ext = path.extname(output).toLowerCase();
   if (ext !== '.json' && ext !== '.skel') throw new ToolError('The output must end in .json or .skel.');
   if (ext === '.skel' && version !== '4.3') throw new ToolError('Binary .skel files are written as format 4.3.');
@@ -92,8 +94,9 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
   const base = output.slice(0, -ext.length);
   const atlasPath = `${base}.atlas`;
   const pngPath = `${base}.png`;
+  const pagePath = `${base}.${texture}`;
   if (path.resolve(output) === path.resolve(p.file)) throw new ToolError('The output must be a different file than the input.');
-  await checkTargets([output, atlasPath, pngPath], force);
+  await checkTargets([output, atlasPath, pagePath, ...(texture === 'ktx2' && fallback ? [pngPath] : [])], force);
 
   const used = usedImages(p.doc);
   const found = await projectImages(p, new Set(used));
@@ -121,10 +124,18 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
       const img = items.find((i) => i.name === r.name);
       for (let y = 0; y < img.height; y++) sheet.set(img.data.subarray(y * img.width * 4, (y + 1) * img.width * 4), ((r.y + y) * width + r.x) * 4);
     }
-    const page = { name: path.basename(pngPath), width, height, filter: atlasFilter(p.doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) };
-    await writeAtomic(pngPath, encodePng({ width, height, data: sheet }));
+    const page = { name: path.basename(pagePath), width, height, filter: atlasFilter(p.doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) };
+    const image = { width, height, data: sheet };
+    let pageBytes;
+    if (texture === 'ktx2') {
+      const { NodeBasisEncoder } = await import('ktx2-encoder');
+      pageBytes = await encodeKtx2(image, { codec, quality, mipmaps, zstd }, await new NodeBasisEncoder().init());
+    } else pageBytes = encodePng(image);
+    const fallbackBytes = texture === 'ktx2' && fallback ? encodePng(image) : null;
+    await writeAtomic(pagePath, pageBytes);
+    if (fallbackBytes) await writeAtomic(pngPath, fallbackBytes);
     await writeAtomic(atlasPath, writeAtlas([page]));
-    files.push(atlasPath, pngPath);
+    files.push(atlasPath, pagePath, ...(fallbackBytes ? [pngPath] : []));
     size = [width, height];
   }
   const bytes = ext === '.skel' ? writeSkeletonBinary(written.json) : new TextEncoder().encode(JSON.stringify(written.json, null, 2));

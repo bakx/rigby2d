@@ -146,6 +146,8 @@ function menus() {
       submenuItem(t('Export'), [
         { label: t('JSON + atlas…'), shortcut: t('Ctrl+E'), action: () => app.exportSkeletonJson(app.saveVersion()) },
         { label: t('Binary .skel + atlas (4.3)…'), action: () => app.exportSkeletonBinary() },
+        { label: t('JSON + KTX2 atlas…'), action: () => app.exportSkeletonJson(app.saveVersion(), { format: 'ktx2', fallback: true }) },
+        { label: t('Binary .skel + KTX2 atlas…'), action: () => app.exportSkeletonBinary({ format: 'ktx2', fallback: true }) },
         { label: t('Defold model…'), title: t('A Rigby2D model component for Defold: the Defold editor plays it live, and the game plays it natively'), action: () => app.exportDefold() },
         ...(app.doc.scene ? [] : [{ label: t('Sprite sheet…'), title: t('Animations as frames: a packed sheet with JSON, a Defold atlas, or PNG frames'), action: () => openSpriteSheetDialog(app) }]),
         'separator',

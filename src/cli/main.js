@@ -215,6 +215,12 @@ export const COMMANDS = {
     positionals: ['project'],
     outputOf: (a) => (/\.(json|skel)$/i.test(a.out ?? '') ? a.out : undefined),
     options: {
+      texture: { type: 'string', choices: ['png', 'ktx2'], help: 'Atlas page format (default png).' },
+      codec: { type: 'string', choices: ['etc1s', 'uastc'], help: 'KTX2 codec (default etc1s).' },
+      quality: { type: 'number', help: 'KTX2 quality from 1 to 255.' },
+      mipmaps: { type: 'boolean', help: 'Generate KTX2 mipmaps.' },
+      zstd: { type: 'boolean', help: 'Supercompress UASTC KTX2 (default on).' },
+      fallback: { type: 'boolean', help: 'Write a PNG fallback alongside KTX2.' },
       format: { type: 'string', short: 'F', choices: ['json', 'skel', 'defold', 'spritesheet'], help: 'What to export (default: from --out: .json or .skel).' },
       out: { type: 'string', short: 'o', help: 'Output file (json, skel) or folder (defold, spritesheet).' },
       version: { type: 'string', short: 'V', choices: ['3.8', '4.2', '4.3'], help: 'json: skeleton JSON version (default 4.3).' },
@@ -241,8 +247,9 @@ export const COMMANDS = {
       if (!format) throw new UsageError('give --format json|skel|defold|spritesheet');
       if (format === 'json' || format === 'skel') {
         if (ext !== `.${format}`) throw new UsageError(`--out for ${format} is a .${format} file`);
-        return exportWithAtlas(path.resolve(a.project), path.resolve(a.out), { version: a.version ?? '4.3', force: a.force });
+        return exportWithAtlas(path.resolve(a.project), path.resolve(a.out), { version: a.version ?? '4.3', force: a.force, texture: a.texture, codec: a.codec, quality: a.quality, mipmaps: a.mipmaps, zstd: a.zstd, fallback: a.fallback });
       }
+      if ([a.texture, a.codec, a.quality, a.mipmaps, a.zstd, a.fallback].some(value => value !== undefined)) throw new UsageError('KTX2 texture options apply only to json and skel exports');
       await fsp.mkdir(path.resolve(a.out), { recursive: true });
       if (format === 'defold') {
         if (a.animation?.length > 1) throw new UsageError('defold: --animation is the one animation the model starts with');

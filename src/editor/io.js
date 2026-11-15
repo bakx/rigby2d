@@ -3,6 +3,7 @@
 // File access goes through a platform file system (see platform.js); PNG coding uses canvas.
 
 
+import { encodeKtx2 } from './ktx2.js';
 import { Animation, setKey } from '../core/animation.js';
 import { atlasFilter, parseAtlas, regionPlacement, textureFilterOf, writeAtlas } from '../core/atlas.js';
 import { readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
@@ -392,18 +393,18 @@ function packSheet(doc, images) {
  * Exports skeleton JSON: `<name>.json` (version "3.8" or "4.2"), `<name>.atlas` and
  * `<name>.png`. Returns { atlasPath, warnings }.
  */
-export async function exportSkeletonJson(path, fs, doc, images, version) {
+export async function exportSkeletonJson(path, fs, doc, images, version, texture = {}) {
   const { json, warnings } = writeSkeletonJson(doc, { version });
-  const atlasPath = await writePackedAtlas(path, fs, doc, images);
+  const atlasPath = await writePackedAtlas(path, fs, doc, images, texture);
   await fs.writeText(path, JSON.stringify(json, null, 2));
   return { atlasPath, warnings };
 }
 
 /** Exports a binary skeleton: `<name>.skel` (format 4.3), `<name>.atlas` and `<name>.png`. */
-export async function exportSkeletonBinary(path, fs, doc, images) {
+export async function exportSkeletonBinary(path, fs, doc, images, texture = {}) {
   const { json, warnings } = writeSkeletonJson(doc, { version: '4.3', binary: true });
   const bytes = writeSkeletonBinary(json);
-  const atlasPath = await writePackedAtlas(path, fs, doc, images);
+  const atlasPath = await writePackedAtlas(path, fs, doc, images, texture);
   await fs.writeFile(path, bytes);
   return { atlasPath, warnings };
 }
@@ -441,12 +442,15 @@ export async function exportScene(path, fs, doc, images, actorDocs) {
 }
 
 /** Packs the used images into `<name>.png` and writes `<name>.atlas`. Returns the atlas path. */
-async function writePackedAtlas(path, fs, doc, images) {
+async function writePackedAtlas(path, fs, doc, images, texture = {}) {
   const { sheet, width, height, regions } = packSheet(doc, images);
   const pngPath = withExtension(path, 'png');
+  const pagePath = texture.format === 'ktx2' ? withExtension(path, 'ktx2') : pngPath;
   const atlasPath = withExtension(path, 'atlas');
-  const page = { name: basename(pngPath), width, height, filter: atlasFilter(doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) };
-  await fs.writeFile(pngPath, await encodePng(sheet));
+  const page = { name: basename(pagePath), width, height, filter: atlasFilter(doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) };
+  const bytes = texture.format === 'ktx2' ? await encodeKtx2({ width, height, data: sheet.getContext('2d').getImageData(0, 0, width, height).data }, texture) : await encodePng(sheet);
+  await fs.writeFile(pagePath, bytes);
+  if (texture.format === 'ktx2' && texture.fallback) await fs.writeFile(pngPath, await encodePng(sheet));
   await fs.writeText(atlasPath, writeAtlas([page]));
   return atlasPath;
 }

@@ -898,11 +898,11 @@ export class App {
   }
 
   /** Writes skeleton JSON (.json + .atlas + .png). `version` is "3.8" or "4.2". */
-  async exportSkeletonJson(version) {
+  async exportSkeletonJson(version, texture = {}) {
     const target = await this.guard(() => platform.pickSaveTarget(`${this.doc.name || 'skeleton'}.json`, t('Skeleton JSON'), 'json'));
     if (!target) return;
     try {
-      const { atlasPath, warnings } = await io.exportSkeletonJson(target.path, target.fs, this.doc, this.images, version);
+      const { atlasPath, warnings } = await io.exportSkeletonJson(target.path, target.fs, this.doc, this.images, version, texture);
       await target.fs.finish();
       const note = warnings.length ? t(' (warnings: {warnings})', { warnings: warnings.join('; ') }) : '';
       track('editor-export-json');
@@ -932,11 +932,11 @@ export class App {
   }
 
   /** Writes a binary skeleton (.skel format 4.3 + .atlas + .png). */
-  async exportSkeletonBinary() {
+  async exportSkeletonBinary(texture = {}) {
     const target = await this.guard(() => platform.pickSaveTarget(`${this.doc.name || 'skeleton'}.skel`, t('Binary skeleton'), 'skel'));
     if (!target) return;
     try {
-      const { atlasPath, warnings } = await io.exportSkeletonBinary(target.path, target.fs, this.doc, this.images);
+      const { atlasPath, warnings } = await io.exportSkeletonBinary(target.path, target.fs, this.doc, this.images, texture);
       await target.fs.finish();
       const note = warnings.length ? t(' (warnings: {warnings})', { warnings: warnings.join('; ') }) : '';
       track('editor-export-skel');
