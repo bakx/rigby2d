@@ -3,6 +3,7 @@
 // library and face controls, audio tracks and lip-sync, and renaming or removing parts of a rig.
 // Workspace, output, poses, face controls and audio live only in .rigby work files.
 
+import { renameBoneRefs } from '../core/constraintdata.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -428,7 +429,7 @@ export function createFilmTools(ws) {
     tool(
       'rename_bone',
       'Rename bone',
-      'Rename a bone. Poses that store the bone follow the new name. Saves the project.',
+      'Rename a bone. Constraints, poses and film effects that refer to it follow the new name. Saves the project.',
       { bone: NAME('Bone'), name: NAME('New') },
       ['bone', 'name'],
       (args, doc) => {

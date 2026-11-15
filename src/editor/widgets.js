@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Small DOM helpers: element builder, draggable number fields and popup menus.
+import { icon } from './icons.js';
 
 /** Shared widget state: panels are not rebuilt while a value is being dragged. */
 export const widgetState = { dragging: false };
@@ -148,7 +149,8 @@ function menuEntry(it) {
         it.action();
       },
     },
-    h('span', null, it.label),
+    // `checked` (true or false): the item is a choice; the current one shows a check.
+    it.checked === undefined ? h('span', null, it.label) : h('span', { class: 'item-label' }, h('span', { class: 'item-check' }, it.checked ? icon('check', 14) : null), it.label),
     it.shortcut ? h('span', { class: 'shortcut' }, it.shortcut) : null,
   );
 }
@@ -158,8 +160,14 @@ function menuEntry(it) {
  * popupMenu's, or a function returning one (built fresh each time it opens, so it can show live
  * state). The child popup lives inside this entry, so the outside-click logic keeps it open.
  */
+/** An on/off menu item: a checkbox and its label, with the shortcut on the right (the menu stays open). */
+export function checkItem(label, checked, onChange, { shortcut = null, title = null } = {}) {
+  const box = h('input', { type: 'checkbox', checked, onchange: () => onChange(box.checked) });
+  return h('label', { class: 'item check-item', title }, h('span', { class: 'item-label' }, box, label), shortcut ? h('span', { class: 'shortcut' }, shortcut) : null);
+}
+
 export function submenuItem(label, items, { title } = {}) {
-  const btn = h('button', { class: 'item submenu', title: title ?? null }, h('span', null, label), h('span', { class: 'shortcut' }, '▸'));
+  const btn = h('button', { class: 'item submenu', title: title ?? null }, h('span', null, label), h('span', { class: 'shortcut submenu-arrow' }, icon('chevron-right', 14)));
   let child = null;
   const closeChild = () => {
     child?.remove();
@@ -211,5 +219,6 @@ export function isMenuOpen() {
 }
 
 window.addEventListener('pointerdown', (e) => {
-  if (openMenu && !openMenu.contains(e.target) && !e.target.closest?.('.menu-title')) closeMenu();
+  // The colour picker floats outside the popup it was opened from (onion skin, guides): not a click away.
+  if (openMenu && !openMenu.contains(e.target) && !e.target.closest?.('.menu-title, .cp-popover')) closeMenu();
 });

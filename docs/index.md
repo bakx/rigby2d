@@ -2,7 +2,8 @@
 
 Rigby2D is a free, open-source editor for 2D skeletal animation. You rig layered artwork with bones
 and meshes, animate it for games or film, and play it anywhere with the included runtimes. A built-in
-[MCP server](mcp.md) lets AI assistants inspect, rig and animate your projects.
+[MCP server](mcp.md) lets AI assistants inspect, rig and animate your projects, and the
+[`rigby` command](cli.md) does the same from a terminal.
 
 ![The Rigby2D editor with NILA, the Rigby2D mascot, in Animate mode: the viewport, the bone tree, the inspector and the dopesheet](images/editor-overview.jpg "NILA, one of the bundled demos, open in the editor")
 
@@ -19,9 +20,10 @@ and meshes, animate it for games or film, and play it anywhere with the included
 <a href="bones-and-slots.html" data-icon="bone"><strong>Rig by hand</strong>Bones, weighted meshes, constraints, skins and events.</a>
 <a href="animating.html" data-icon="play"><strong>Animate</strong>Dopesheet, graph editor, onion skin, poses and face controls.</a>
 <a href="retargeting.html" data-icon="repeat-2"><strong>Reuse animation</strong>Retarget animations from one character to another.</a>
-<a href="film.html" data-icon="clapperboard"><strong>Make films</strong>Camera, audio, lip-sync, and renders to PNG, WebM and MP4.</a>
+<a href="film.html" data-icon="clapperboard"><strong>Make films</strong>Camera, audio, lip-sync, film effects, and renders to PNG, WebM and MP4.</a>
 <a href="scenes.html" data-icon="drama"><strong>Compose scenes</strong>Several characters, clips, parallax layers and a camera.</a>
 <a href="scripting.html" data-icon="code"><strong>Automate</strong>Python scripts, add-ons, and AI assistants over MCP.</a>
+<a href="cli.html" data-icon="terminal"><strong>Command line</strong>Convert, export, rig, script and render on the GPU with <code>rigby</code>, no window needed.</a>
 <a href="runtimes.html" data-icon="gamepad-2"><strong>Ship to any engine</strong>JSON or <code>.skel</code> for Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, JavaScript and Rust.</a>
 </div>
 

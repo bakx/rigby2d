@@ -16,6 +16,7 @@
   <a href="https://rigby2d.com/editor/"><img alt="Try it in your browser" src="https://img.shields.io/badge/%E2%96%B6%20Try%20it-in%20your%20browser-b5d3e7?style=for-the-badge&labelColor=0a0a0b" height="34"></a>
   <a href="https://rigby2d.com/#download"><img alt="Download" src="https://img.shields.io/badge/%E2%AC%87%20Download-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-5ea2ff?style=for-the-badge&labelColor=0a0a0b" height="34"></a>
   <a href="https://discord.gg/PGgaTwbNH"><img alt="Join our Discord" src="https://img.shields.io/badge/Join-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=0a0a0b" height="34"></a>
+  <a href="https://x.com/Rigby2d"><img alt="Follow @Rigby2d on X" src="https://img.shields.io/badge/Follow-%40Rigby2d-1d1d1f?style=for-the-badge&logo=x&logoColor=white&labelColor=0a0a0b" height="34"></a>
   <br>
   <sub>Windows · macOS · Linux · or the full editor in your browser, nothing to install</sub>
 </p>
@@ -101,7 +102,7 @@ runtimes and the MCP server. The pages are also in [`docs/`](docs/).
   on-device Whisper transcription, and renders to PNG sequences, WebM with alpha and MP4.
 - **Scene composition** (new in 0.3): several characters on one stage as actors with NLE-style clips
   (trim, speed, loops, crossfades, their own audio), painted layers with parallax, and a camera,
-  and they play in games through the Godot, Unity, Cocos Creator, Phaser, PixiJS, JavaScript and Rust runtimes. See [Scenes](https://rigby2d.com/docs/scenes.html).
+  and they play in games through the Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, JavaScript and Rust runtimes. See [Scenes](https://rigby2d.com/docs/scenes.html).
 - **A focused editor**: Game and Film workspaces, panels you can resize or pop out to a second
   monitor, *Open recent*, and a searchable shortcut reference with Reference and Blender-like keys.
 - **Your work is safe**: saves that never leave a half-written file, `.rigby1` backups like Blender's

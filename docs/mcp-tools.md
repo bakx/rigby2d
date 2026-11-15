@@ -290,41 +290,46 @@ Fire an event at a time in an animation (games receive it during playback). Crea
 
 ### `add_constraint`
 
-Add IK, transform, path, physics or slider constraints. Physics with several bones creates one constraint per bone (returns their names). Physics motion weights default to zero: set rotate: 1 for hair.
+Add a constraint, applied after the existing ones. ik: 'bones' is the chain (1 or 2 bones), 'target' the target bone. transform: 'bones' follow 'target' (the source bone); by default every property is mapped and offsets keep the current pose (nothing jumps). path: 'bones' along the path attachment in slot 'target'. physics: one constraint per bone in 'bones' (names get a number), with rotate 1 unless 'settings' say otherwise. slider: 'settings.animation' is the animation it plays; optional 'target' is the bone that drives it. Saves the project.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `type` **required** | `'ik'`, `'transform'`, `'path'`, `'physics'`, `'slider'` |  |
-| `name` **required** | string |  |
-| `bones` **required** | list of string |  |
-| `target` | string |  |
-| `settings` | object | Constraint settings in skeleton JSON spelling (e.g. bendPositive, mix, rotate, damping, inertiaGlobal). |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
+| `type` **required** | `'ik'`, `'transform'`, `'path'`, `'physics'`, `'slider'` |  |
+| `name` **required** | string | Constraint name (must be new). |
+| `bones` | list of string | Constrained bones (see the description per type). |
+| `target` | string | IK target bone, transform source bone, path slot, or the bone driving a slider. |
+| `keepPose` | boolean | Transform only: set offsets so the bones stay where they are (default true). |
+| `settings` | object | Settings in skeleton JSON 4.3 spelling. IK: mix, softness, bendPositive, compress, stretch, uniform. Transform: properties ({ from: { offset, to: { to: { offset, max, scale } } } }), offsetX, offsetY, offsetRotation, mixRotate, mixX, mixY, mixScaleX, mixScaleY, mixShearY, localSource, localTarget, additive, clamp. Path: positionMode, spacingMode, rotateMode, position, spacing, mixRotate, mixX, mixY. Physics: x, y, rotate, scaleX, shearX, inertia, strength, damping, mass, wind, gravity, mix, limit, fps. Slider: animation, loop, bone, property, scale, offset, local, additive, time, mix. On set_constraint, null removes a setting. |
 
 ### `set_constraint`
 
-Change constraint settings without replacing other settings.
+Change a constraint's settings (skeleton JSON 4.3 spelling; null removes one), rename it, or move it in the application order. IK also takes 'target' in settings. Saves the project.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `name` **required** | string |  |
-| `settings` **required** | object | Constraint settings in skeleton JSON spelling (e.g. bendPositive, mix, rotate, damping, inertiaGlobal). |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
+| `constraint` | string | Constraint name. |
+| `name` | string | Legacy alias for constraint. |
+| `settings` | object | Settings in skeleton JSON 4.3 spelling. IK: mix, softness, bendPositive, compress, stretch, uniform. Transform: properties ({ from: { offset, to: { to: { offset, max, scale } } } }), offsetX, offsetY, offsetRotation, mixRotate, mixX, mixY, mixScaleX, mixScaleY, mixShearY, localSource, localTarget, additive, clamp. Path: positionMode, spacingMode, rotateMode, position, spacing, mixRotate, mixX, mixY. Physics: x, y, rotate, scaleX, shearX, inertia, strength, damping, mass, wind, gravity, mix, limit, fps. Slider: animation, loop, bone, property, scale, offset, local, additive, time, mix. On set_constraint, null removes a setting. |
+| `rename` | string | New name (keys and skins follow). |
+| `order` | integer | New position in the application order (0 = first). |
 
 ### `delete_constraint`
 
-Delete a constraint, its keys and skin memberships.
+Delete a constraint with its animation keys and skin memberships. Saves the project.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `name` **required** | string |  |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
+| `constraint` **required** | string | Constraint name. |
+| `name` | string | Legacy alias for constraint. |
 
 ### `set_constraint_key`
 
@@ -725,7 +730,7 @@ Lip-sync an animation to one of its audio tracks. With `text` (the words spoken)
 
 ### `rename_bone`
 
-Rename a bone. Poses that store the bone follow the new name. Saves the project.
+Rename a bone. Constraints, poses and film effects that refer to it follow the new name. Saves the project.
 
 | Parameter | Type | Description |
 | --- | --- | --- |

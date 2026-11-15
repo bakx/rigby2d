@@ -3,11 +3,15 @@
 // WebGL renderer. Bones, handles and other overlays stay on the 2D canvas above it.
 
 import { PixelGrid } from '../webgl/pixelgrid.js';
+import { FilmDrawer } from '../webgl/filmdraw.js';
+import { ParticleField, hasFilmFx } from '../core/filmfx.js';
+import { has } from './workspaces.js';
 import { WebGLRenderer } from '../webgl/renderer.js';
 import { actorSlots } from '../core/scene.js';
 import { imageKey } from './actors.js';
+import { canvasRgba } from './canvascolors.js';
 
-const BACKGROUND = [38 / 255, 38 / 255, 38 / 255];
+const BACKGROUND = [38 / 255, 38 / 255, 38 / 255, 1];
 const GRID = [48 / 255, 48 / 255, 48 / 255, 1];
 const X_AXIS = [90 / 255, 60 / 255, 60 / 255, 1];
 const Y_AXIS = [60 / 255, 90 / 255, 60 / 255, 1];
@@ -34,6 +38,9 @@ export class GLView {
     this.gl = gl;
     this.renderer = new WebGLRenderer(gl);
     this.pixelGrid = new PixelGrid(this.renderer);
+    /** Film effects preview (Film workspace, projects with film effects only). */
+    this.film = null;
+    this.particles = new ParticleField();
     /** Image name -> { canvas, entry }: textures follow the editor's image store. */
     this.textures = new Map();
     this.lost = false;
@@ -79,7 +86,8 @@ export class GLView {
     const h = Math.round(height * dpr);
     if (this.canvas.width !== w || this.canvas.height !== h) [this.canvas.width, this.canvas.height] = [w, h];
     gl.viewport(0, 0, w, h);
-    gl.clearColor(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], 1);
+    const bg = canvasRgba('--canvas-bg', BACKGROUND);
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     const { zoom, panX, panY } = app.view;
     const r = this.renderer;
@@ -102,8 +110,9 @@ export class GLView {
     const y0 = (-height / 2 + panY) / zoom;
     const y1 = (height / 2 + panY) / zoom;
     const px = 1 / zoom;
-    for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) r.line(x, y0, x, y1, px, GRID);
-    for (let y = Math.floor(y0 / step) * step; y <= y1; y += step) r.line(x0, y, x1, y, px, GRID);
+    const grid = canvasRgba('--canvas-grid', GRID);
+    for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) r.line(x, y0, x, y1, px, grid);
+    for (let y = Math.floor(y0 / step) * step; y <= y1; y += step) r.line(x0, y, x1, y, px, grid);
     r.line(x0, 0, x1, 0, px, X_AXIS);
     r.line(0, y0, 0, y1, px, Y_AXIS);
 
@@ -117,8 +126,21 @@ export class GLView {
     };
     r.end();
     let gridded = false;
-    if (size > 0) gridded = this.pixelGrid.draw(w, h, camera, size, scene);
-    if (!gridded) {
+    // Film effects preview: only in the Film workspace, for projects that have film effects, and
+    // unless turned off (View menu). Everything else draws exactly as before.
+    const film = has(app, 'filmFx') && app.filmPreview !== false && hasFilmFx(app.doc);
+    if (size > 0 && !film) gridded = this.pixelGrid.draw(w, h, camera, size, scene);
+    if (film) {
+      r.begin(w, h, camera);
+      for (const g of app.onionDraws?.() ?? []) r.drawSkeleton(app.doc, g.pose, lookup, { tint: g.tint, skip: g.skip });
+      r.end();
+      const world = (name) => {
+        const i = app.doc.bones.findIndex((b) => b.name === name);
+        return i < 0 ? null : pose.world[i];
+      };
+      this.film ??= new FilmDrawer(r);
+      this.film.draw({ doc: app.doc, pose, lookup, width: w, height: h, camera, target: null, between: sceneActors(app, pose, r, lookup), particles: this.particles.update(app.doc, app.time ?? 0, world) });
+    } else if (!gridded) {
       r.begin(w, h, camera);
       scene();
       r.end();
@@ -130,7 +152,7 @@ export class GLView {
       for (let y = Math.floor(y0 / size) * size; y <= y1; y += size) r.line(x0, y, x1, y, px, PIXEL_LINES);
       r.end();
     }
-    this.stats = { drawCalls: r.drawCalls, pixelGrid: gridded };
+    this.stats = { drawCalls: r.drawCalls, pixelGrid: gridded, film };
     return true;
   }
 }

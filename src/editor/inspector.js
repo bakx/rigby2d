@@ -18,11 +18,13 @@ import { FPS_PRESETS, SIZE_PRESETS, formatFps, hexToRgba, rgbaToHex } from './ou
 import { posesUi } from './poseui.js';
 import { turnUi } from './turnui.js';
 import { warpUi } from './warpui.js';
+import { effectsUi, filmProjectUi, particlesUi } from './filmfxui.js';
 import { has } from './workspaces.js';
 import { sounds } from './audio.js';
 import { renameOnionBone } from './onion.js';
 import { openLipSync } from './lipsyncui.js';
 import { t, tn } from './i18n.js';
+import { colorButton } from './colorpicker.js';
 
 export function render(app, el) {
   const b = selBone(app.sel);
@@ -177,6 +179,8 @@ function boneUi(app, b) {
     ),
     turnUi(app, b),
     warpUi(app, b),
+    effectsUi(app, { bone: bone.name }),
+    particlesUi(app, b),
   ];
 }
 
@@ -194,12 +198,10 @@ function boneColorUi(app, b) {
   return h(
     'span',
     { class: 'bone-color' },
-    h('input', {
-      type: 'color',
-      value: hex ? `#${hex.slice(0, 6)}` : '#6ec8e6',
+    colorButton(hex ? `#${hex.slice(0, 6)}` : '#6ec8e6', {
+      label: t('Bone color'),
       title: t('Color of the bone in the viewport'),
-      oninput: (e) => set(`${e.target.value.slice(1)}ff`),
-      onchange: (e) => e.target.blur(),
+      onInput: (v) => set(`${v.slice(1)}ff`),
     }),
     hex ? iconButton('x', { size: 'sm', title: t('Back to the default bone color'), onclick: () => set(null) }) : null,
   );
@@ -211,15 +213,13 @@ const fromHex = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) 
 function slotUi(app, s) {
   const setupMode = app.mode === Mode.Setup;
   const slot = app.doc.slots[s];
-  const color = h('input', {
-    type: 'color',
-    value: toHex(slot.color),
+  const color = colorButton(toHex(slot.color), {
+    label: t('Slot color'),
     disabled: !setupMode,
-    oninput: (e) => {
-      slot.color.splice(0, 3, ...fromHex(e.target.value));
+    onInput: (v) => {
+      slot.color.splice(0, 3, ...fromHex(v));
       app.changed();
     },
-    onchange: (e) => e.target.blur(),
   });
   const alpha = dragValue(slot.color[3], (v) => {
     slot.color[3] = v;
@@ -424,6 +424,7 @@ function slotUi(app, s) {
     );
   }
   if (setupMode) out.push(h('div', { class: 'buttons' }, button(t('Delete slot'), { kind: 'danger', icon: 'trash-2', onclick: () => edit.deleteSelection(app) })));
+  out.push(effectsUi(app, { slot: slot.name }));
   return out;
 }
 
@@ -462,6 +463,7 @@ function projectUi(app) {
     has(app, 'output') ? h('hr') : null,
     has(app, 'output') ? outputUi(app) : null,
     has(app, 'audio') ? audioUi(app) : null,
+    filmProjectUi(app),
     h('hr'),
     section(t('Rig'), [
       h('div', { class: 'small' }, t('{bones} bones · {slots} slots · {skins} skins', { bones: app.doc.bones.length, slots: app.doc.slots.length, skins: app.doc.skins.length + 1 })),
@@ -581,7 +583,7 @@ function outputUi(app) {
       row(
         t('Background'),
         h('label', null, h('input', { type: 'checkbox', checked: !s.background, onchange: (e) => set({ background: e.target.checked ? null : [0, 0, 0, 1] }) }), ' ', t('Transparent')),
-        s.background ? h('input', { type: 'color', value: rgbaToHex(s.background), oninput: (e) => set({ background: hexToRgba(e.target.value) }) }) : null,
+        s.background ? colorButton(rgbaToHex(s.background), { label: t('Background'), onInput: (v) => set({ background: hexToRgba(v) }) }) : null,
       ),
       row(
         t('Framing'),

@@ -8,7 +8,7 @@ import { confirmDialog, fetchBytes, openExternal, pickImportFiles as importFiles
 import { t, tn } from './i18n.js';
 import { h } from './widgets.js';
 import { button, dialog as uiDialog, uiIcon } from './ui.js';
-import markUrl from '../../branding/rigby2d-mark.svg?url';
+import { brandMark } from './brandmark.js';
 
 /* global __RIGBY_VERSION__ */
 export const VERSION = typeof __RIGBY_VERSION__ === 'string' ? __RIGBY_VERSION__ : '';
@@ -183,7 +183,7 @@ export function openShortcuts(app, { onClose } = {}) {
                   render();
                 },
               },
-              '×',
+              uiIcon('x', 'sm'),
             ),
           ),
     );
@@ -192,7 +192,7 @@ export function openShortcuts(app, { onClose } = {}) {
       'span',
       { class: 'key-edits' },
       ...chips,
-      isRecording(null) ? h('span', { class: 'key-record' }, t('Press a key…')) : h('button', { class: 'key-add', title: t('Add a key for this'), onclick: record(null) }, '+'),
+      isRecording(null) ? h('span', { class: 'key-record' }, t('Press a key…')) : h('button', { class: 'key-add', title: t('Add a key for this'), onclick: record(null) }, uiIcon('plus', 'sm')),
       changed
         ? h(
             'button',
@@ -204,7 +204,7 @@ export function openShortcuts(app, { onClose } = {}) {
                 render();
               },
             },
-            '↺',
+            uiIcon('rotate-ccw', 'sm'),
           )
         : null,
     );
@@ -312,7 +312,7 @@ export function openAbout() {
     h(
       'div',
       { class: 'about-hero' },
-      h('img', { src: markUrl, alt: '', width: 56, height: 56 }),
+      brandMark(56),
       h(
         'div',
         null,

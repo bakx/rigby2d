@@ -17,7 +17,7 @@ const RIGBY = {
   setup: 'AutoRig: a layered PSD becomes an editable rig in one step',
   film: 'Film workspace: camera, audio tracks, renders to PNG sequences, WebM with alpha and MP4 at 4K',
   lipsync: 'Lip-sync from audio, transcribed on your computer',
-  runtimes: 'Godot, Unity, Defold, Cocos Creator, Phaser, JavaScript and Rust, free and open source',
+  runtimes: 'Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, JavaScript and Rust, free and open source',
   automation: 'Python scripting, add-ons, and a built-in MCP server for AI assistants',
 };
 
@@ -73,7 +73,7 @@ export const COMPARISONS = [
     why: [
       'A desktop editor that keeps moving. New features every release on Windows, macOS and Linux.',
       'Your characters, exactly. Checked against the DragonBones runtime: bones, weapons, effects, images and colors match.',
-      'Modern runtimes. Ship to Godot, Unity, Defold, Cocos Creator, Phaser, the web and Rust, all free and open source.',
+      'Modern runtimes. Ship to Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, the web and Rust, all free and open source.',
       'More than you had. Physics, clipping, AutoRig, a film workspace and lip-sync on top of what DragonBones did.',
       'Free and open source. No account, no lock-in, MIT OR Apache-2.0.',
     ],
@@ -135,7 +135,7 @@ export const COMPARISONS = [
       'No subscription. Rigging, animation, lip-sync and 4K rendering, free.',
       'Rig in one step. AutoRig turns a layered PSD into a working rig with bones, meshes and IK.',
       'Physics on hair, cloth and accessories, built in.',
-      'One rig for film and games: the same character plays in Godot, Unity, Defold, Cocos Creator, Phaser and the web.',
+      'One rig for film and games: the same character plays in Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, the web and Rust.',
       'Open source: your pipeline is never locked to a vendor.',
     ],
     switching: 'Export your character\'s layers as a PSD, then use File ▸ AutoRig artwork in Rigby2D. Render in the Film workspace, or ship the same rig to a game.',
@@ -143,7 +143,7 @@ export const COMPARISONS = [
     source: 'https://shop.toonboom.com/en/products/harmony',
     faq: [
       ['Is Rigby2D a full replacement for Harmony?', 'For cut-out character animation, it covers rigging, animation, lip-sync and rendering for free. Harmony is a complete studio pipeline with drawing and compositing that Rigby2D does not try to replace.'],
-      ['Can I use Rigby2D characters in games too?', 'Yes. The same rig plays in Godot, Unity, Defold, Cocos Creator, Phaser, the browser and Rust with the free Rigby2D runtimes.'],
+      ['Can I use Rigby2D characters in games too?', 'Yes. The same rig plays in Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, the browser and Rust with the free Rigby2D runtimes.'],
     ],
   },
 ];
@@ -194,7 +194,8 @@ export function comparePage(c) {
           <h2>Questions</h2>
           <div class="vs-faq">${c.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
 
-          <div class="community-callout"><p><b>Questions about switching?</b> Ask on Discord: people who made the move answer there.</p><a class="btn discord" href="https://discord.gg/PGgaTwbNH" rel="noopener">${brandIcon('discord', 18)}Join our Discord</a></div>
+          <div class="community-callout"><p><b>Questions about switching?</b> Ask on Discord: people who made the move answer there.</p><a class="btn discord" href="https://discord.gg/PGgaTwbNH" rel="noopener">${brandIcon('discord', 18)}Join our Discord</a>
+              <a class="btn x" href="https://x.com/Rigby2d" rel="noopener" data-goatcounter-click="site-x-compare"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>Follow us on X</a></div>
           <p class="fine vs-others">Also: ${others}</p>
         </div>
       </section>`;

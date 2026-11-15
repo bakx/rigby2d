@@ -20,6 +20,7 @@ import { worldKeyValue } from '../core/authoring.js';
 import { createAuthoringTools } from './authoring.js';
 import { createFilmTools } from './film.js';
 import { bakeTool } from './rendering.js';
+import { constraintTools } from './constrainttools.js';
 
 const CURVES = { linear: LINEAR, stepped: STEPPED, easeIn: EASE_IN, easeOut: EASE_OUT, easeInOut: EASE_IN_OUT };
 const CHANNELS = ['rotate', 'translate', 'scale', 'shear'];
@@ -387,6 +388,7 @@ export function createEditTools(ws) {
         return { animation: anim.name, event: args.event, time, createdDefinition: created };
       },
     },
+    ...constraintTools(base, EDIT),
   ];
   // Each tool loads the project, applies its edit, validates and saves.
   for (const t of tools) t.handler = (args) => edit(ws, args, (doc, p) => t.apply(doc, args, p));

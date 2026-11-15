@@ -69,8 +69,7 @@ needs no pixels. Import new image files through MCP or the editor first.
 
 ## Defaults and limitations
 
-Physics motion weights `x`, `y`, `rotate`, `scaleX`, `shearX` start at **0**. For swinging hair,
-set `rotate: 1`. Defaults: inertia 0.5, strength 100, damping 0.85, mass 1, wind/gravity 0,
+MCP `add_constraint` defaults physics `rotate` to **1**; set `rotate: 0` for no rotation. Other motion weights default to 0. Python `rigby.add_constraint` defaults all motion weights to 0. Defaults: inertia 0.5, strength 100, damping 0.85, mass 1, wind/gravity 0,
 limit 5000, simulation fps 60, mix 1. Global flags opt into skeleton-wide physics keys.
 Physics is per bone; adding a chain returns a constraint name for each bone. Key those names.
 

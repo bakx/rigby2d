@@ -38,15 +38,15 @@ export function curve(value = 'linear') {
 const PHYSICS = { x: 0, y: 0, rotate: 0, scaleX: 0, shearX: 0, inertia: 0.5, strength: 100, damping: 0.85, mass: 1, wind: 0, gravity: 0, limit: 5000, fps: 60, mix: 1 };
 const FIELDS = {
   ik: 'mix softness bendPositive compress stretch uniform skinRequired',
-  transform: 'rotation x y scaleX scaleY shearY mixRotate mixX mixY mixScaleX mixScaleY mixShearY local localTarget relative skin properties',
+  transform: 'rotation x y scaleX scaleY shearY mixRotate mixX mixY mixScaleX mixScaleY mixShearY local localSource localTarget relative additive clamp skin properties',
   path: 'position spacing rotation mixRotate mixX mixY positionMode spacingMode rotateMode skin',
   physics: `${Object.keys(PHYSICS).join(' ')} inertiaGlobal strengthGlobal dampingGlobal massGlobal windGlobal gravityGlobal mixGlobal skin`,
   slider: 'animation property scale offset local loop additive time mix skin',
 };
-const BOOLEANS = new Set('bendPositive compress stretch uniform skinRequired local localTarget relative skin loop additive'.split(' '));
+const BOOLEANS = new Set('bendPositive compress stretch uniform skinRequired local localSource localTarget relative skin loop additive clamp'.split(' '));
 const STRINGS = new Set('animation property positionMode spacingMode rotateMode'.split(' '));
 
-function settingsFor(type, settings = {}) {
+export function settingsFor(type, settings = {}) {
   const allowed = FIELDS[type]?.split(' ');
   if (!allowed) throw new Error(`Unknown constraint type '${type}'.`);
   for (const [k, v] of Object.entries(settings)) {

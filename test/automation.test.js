@@ -64,10 +64,10 @@ test('constraints: atomic batch creates physics, keys IK, renames references, ed
   assert.equal(d.ik[0].bendPositive, false);
   assert.equal(poseAt(d, d.animations[0], 0.5).ik[0].mix, 0);
   const info = await tools.describe_rig({});
-  assert.equal(info.constraints.find((c) => c.name === 'hair').bones[0], 'fringe');
-  assert.equal(info.constraints.find((c) => c.name === 'hair').settings.damping, 0.7);
+  assert.equal(info.constraints.find((c) => c.name === 'hair1').bones[0], 'fringe');
+  assert.equal(info.constraints.find((c) => c.name === 'hair1').settings.damping, 0.7);
   const before = await fs.readFile(path.join(dir, 'a.rigby'));
-  await assert.rejects(tools.batch_edit({ operations: [{ op: 'add_skin', name: 'temporary' }, { op: 'set_constraint', name: 'hair', settings: { unknown: 1 } }] }), /Operation 2/);
+  await assert.rejects(tools.batch_edit({ operations: [{ op: 'add_skin', name: 'temporary' }, { op: 'set_constraint', name: 'hair1', settings: { unknown: 1 } }] }), /Operation 2/);
   assert.deepEqual(await fs.readFile(path.join(dir, 'a.rigby')), before);
   await tools.delete_constraint({ name: 'arm_ik' });
   assert.equal((await read()).animations[0].ik.length, 0);

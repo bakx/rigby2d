@@ -89,9 +89,6 @@ export function createAuthoringTools(ws) {
     handler(args) { return edit(ws, args, (doc, p) => this.apply(doc, args, p)); },
   });
   const tools = [
-    make('add_constraint', 'Add IK, transform, path, physics or slider constraints. Physics with several bones creates one constraint per bone (returns their names). Physics motion weights default to zero: set rotate: 1 for hair.', { type: { type: 'string', enum: ['ik', 'transform', 'path', 'physics', 'slider'] }, name: str, bones: names, target: str, settings }, ['type', 'name', 'bones'], author.createConstraint),
-    make('set_constraint', 'Change constraint settings without replacing other settings.', { name: str, settings }, ['name', 'settings'], author.changeConstraint),
-    make('delete_constraint', 'Delete a constraint, its keys and skin memberships.', { name: str }, ['name'], author.deleteConstraint),
     make('set_constraint_key', 'Key constraint values: IK mix/softness/bendPositive/compress/stretch; transform mixes; path position/spacing/mixes; physics inertia/strength/damping/mass/wind/gravity/mix; slider time/mix.', { animation: str, constraint: str, time: { ...num, minimum: 0 }, values: { type: 'object' }, curve: CURVE }, ['animation', 'constraint', 'time', 'values'], author.keyConstraint),
     make('add_skin', 'Add an empty skin; slots without overrides retain the default attachments.', { name: str }, ['name'], author.addSkin),
     make('delete_skin', 'Delete a skin and its deform/sequence timelines.', { name: str }, ['name'], author.deleteSkin),

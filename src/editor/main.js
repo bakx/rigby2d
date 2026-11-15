@@ -29,7 +29,7 @@ import { findPanel, rigLeftDock } from './docklayout.js';
 import { GraphEditor } from './graph.js';
 import { Dopesheet, copySelectedKeys, cutSelectedKeys, deleteSelectedKeys, exitSelectModes, pasteKeys, renderControls } from './timeline.js';
 import { Viewport } from './viewport.js';
-import { closeMenu, h, isMenuOpen, popupMenu, submenuItem, widgetState } from './widgets.js';
+import { checkItem, closeMenu, h, isMenuOpen, popupMenu, submenuItem, widgetState } from './widgets.js';
 import { uiIcon } from './ui.js';
 import * as log from './log.js';
 import { toggleLogWindow, windowOpen as logOpen } from './logwindow.js';
@@ -46,6 +46,7 @@ import { ago, clearRecentProjects, recentProjects, splitPath } from './recent.js
 import { LINKS, VERSION, openAbout, openShortcuts, openSupporters } from './helpui.js';
 import { installRecovery } from './recoveryui.js';
 import { applyInterfaceScale, openPreferences } from './prefsui.js';
+import { initThemes, openThemes } from './themeui.js';
 import { AddonManager } from './addonui.js';
 import { languageFor, setLanguage, t } from './i18n.js';
 import { openRuntimes } from './runtimeui.js';
@@ -54,7 +55,7 @@ import { openWelcome } from './welcomeui.js';
 import { TOUR_RELEASE, openWhatsNew, shouldShowWhatsNew } from './whatsnewui.js';
 import { COMMUNITY_URL, DEVLOG_URL } from './news.js';
 import { openMigrationCheck } from './migrationui.js';
-import markUrl from '../../branding/rigby2d-mark.svg?url';
+import { brandMark } from './brandmark.js';
 import { startAnalytics } from './analytics.js';
 
 // The desktop app has its own menus: no WebView right-click menu outside text fields.
@@ -91,8 +92,10 @@ const showPreferences = (page) => openPreferences(app, addons, page);
 // The launch tour of this release (Help ▸ What's new, and What's new on the welcome screen).
 const whatsNew = () => openWhatsNew(app, { showPreferences });
 applyInterfaceScale(app);
+initThemes(app);
 const inTauri = '__TAURI_INTERNALS__' in window;
 const $ = (sel) => document.querySelector(sel);
+
 
 // Detaching panels into their own OS windows, syncing them and the saved window layouts all live
 // in panelsync.js (it was growing here). `sync` is created once the viewport exists (below).
@@ -238,26 +241,36 @@ function menus() {
         }),
         ` ${t('Timeline in Setup mode')}`,
       ),
-      {
-        label: `${app.hideOverlays ? '● ' : '○ '}${t('Hide overlays')}`,
-        shortcut: sc('view.overlays'),
-        title: t('Hides bones, shapes, selection outlines and guides at once, to watch the animation as it renders'),
-        action: () => {
-          app.hideOverlays = !app.hideOverlays;
+      checkItem(
+        t('Hide overlays'),
+        app.hideOverlays,
+        (on) => {
+          app.hideOverlays = on;
           app.changed();
         },
-      },
+        { shortcut: sc('view.overlays'), title: t('Hides bones, shapes, selection outlines and guides at once, to watch the animation as it renders') },
+      ),
+      ...(has(app, 'filmFx')
+        ? [
+            checkItem(
+            t('Preview film effects'),
+            app.filmPreview !== false,
+            (on) => {
+              app.filmPreview = on;
+              app.changed();
+            },
+            { title: t('Shows layer effects, particles and depth of field in the viewport. Turn off if playback slows down; renders always include them.') },
+            ),
+          ]
+        : []),
       { label: logOpen() ? t('Hide log') : t('Log'), action: () => toggleLogWindow() },
       submenuItem(t('Panel layout'), () => [
         { label: t('Rig on the left'), title: t('Skins, constraints, meshes and events in a Rig panel left of the viewport'), action: () => applyPreset(rigLeftDock(), t('Rig on the left')) },
-        {
-          label: `${dock.has('rig') ? '● ' : '○ '}${t('Rig panel')}`,
-          title: t('Skins, constraints, meshes and events in their own panel'),
-          action: () => (dock.has('rig') ? dock.close('rig') : dock.open('rig')),
-        },
+        checkItem(t('Rig panel'), dock.has('rig'), (on) => (on ? dock.open('rig') : dock.close('rig')), { title: t('Skins, constraints, meshes and events in their own panel') }),
         'separator',
         { label: t('Reset layout'), title: t('Put the panels back in their default places and sizes'), action: () => resetLayout() },
       ]),
+      { label: t('Themes…'), title: t('Make your own theme, or import one'), action: () => openThemes(app) },
       // Save and recall where the detached panels sit (desktop only; panels pop out only there).
       ...(inTauri && sync ? [windowLayoutsMenuItem({ app, sync })] : []),
       'separator',
@@ -381,7 +394,7 @@ function buildMenuBar() {
         ].filter(Boolean));
       },
     },
-    uiIcon('layers', 'sm'),
+    uiIcon('onion', 'sm'),
     h('span', null, t('Onion skin on')),
   );
   // Workspace switcher: which tools the editor shows for this project.
@@ -391,7 +404,7 @@ function buildMenuBar() {
   // in its own title bar).
   const home = inTauri
     ? null
-    : h('a', { class: 'home-link', href: '../', title: t('Rigby2D website: home, documentation and downloads'), 'data-goatcounter-click': 'editor-home' }, h('img', { src: markUrl, alt: '', width: 18, height: 18 }), h('span', null, t('Rigby2D')));
+    : h('a', { class: 'home-link', href: '../', title: t('Rigby2D website: home, documentation and downloads'), 'data-goatcounter-click': 'editor-home' }, brandMark(18, 'home-mark'), h('span', null, t('Rigby2D')));
   const docTitle = inTauri ? null : h('span', { class: 'doc-title' });
   bar.replaceChildren(
     ...[home, home && h('span', { class: 'vsep' }), ...titles, h('span', { class: 'vsep' }), mode, quickBar, onionNotice, h('span', { class: 'spacer' }), docTitle, docTitle && h('span', { class: 'spacer' }), updateBadge(app), switcher].filter(Boolean),
