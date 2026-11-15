@@ -99,6 +99,7 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
   const found = await projectImages(p, new Set(used));
   const items = used.filter((n) => found.has(n)).map((name) => ({ name, ...rgbaOf(found.get(name)) }));
   const missing = used.filter((n) => !found.has(n));
+  if (missing.length) throw new ToolError(`Cannot export: ${missing.length} required image(s) are missing: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', …' : ''}.`);
   let written;
   try {
     written = ext === '.skel' ? writeSkeletonJson(p.doc, { version: '4.3', binary: true }) : writeSkeletonJson(p.doc, { version });

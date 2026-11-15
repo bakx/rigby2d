@@ -563,6 +563,8 @@ async function defoldModel(ws, { input, output_folder, name, folder, animation =
   const used = new Set(usedImages(p.doc));
   const images = await projectImages(p, used);
   const missing = [...used].filter((n) => !images.has(n));
+  if (missing.length) throw new ToolError(`Cannot export: ${missing.length} required image(s) are missing: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', …' : ''}.`);
+  for (const picture of images.values()) if (picture.bytes) decodePng(picture.bytes);
   const files = defoldModelFiles({ doc: p.doc, images, name: base, folder: projectFolder, animation, skin });
   const targets = [];
   for (const f of files) {
@@ -605,11 +607,10 @@ async function rasterLookup(p) {
     return atlasLookup(atlas, (page) => pages.get(page.name));
   }
   if (p.imageSource?.startsWith('folder ')) {
-    const folder = path.join(dir, p.imageSource.slice(7));
     const textures = new Map();
-    for (const name of p.images) {
-      const bytes = await fs.readFile(path.join(folder, `${name}.png`)).catch(() => null);
-      if (bytes) textures.set(name, decode(bytes));
+    const pictures = await projectImages(p, new Set(p.images));
+    for (const [name, picture] of pictures) {
+      textures.set(name, picture.bytes ? decode(picture.bytes) : { width: picture.width, height: picture.height, data: picture.rgba });
     }
     return imageLookup(textures);
   }
@@ -629,7 +630,12 @@ async function exportSpriteSheet(ws, args) {
   }
   const missing = (args.animations ?? []).filter((a) => !p.doc.animations.some((x) => x.name === a));
   if (missing.length) throw new ToolError(`No animation ${missing.map((m) => `'${m}'`).join(', ')}. Animations: ${p.doc.animations.map((a) => a.name).join(', ')}.`);
+  const have = new Set(p.images ?? []);
+  const missingImages = usedImages(p.doc).filter((name) => !have.has(name));
+  if (missingImages.length) throw new ToolError(`Cannot export: ${missingImages.length} required image(s) are missing: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
   const lookup = await rasterLookup(p);
+  const unavailable = usedImages(p.doc).filter((name) => !lookup(name));
+  if (unavailable.length) throw new ToolError(`Cannot export: ${unavailable.length} required image(s) could not be loaded: ${unavailable.slice(0, 20).join(', ')}${unavailable.length > 20 ? ', …' : ''}.`);
   let result;
   try {
     result = buildSpriteSheet(p.doc, lookup, {

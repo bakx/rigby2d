@@ -210,7 +210,8 @@ export const COMMANDS = {
     details:
       'json, skel   --out is the skeleton file; <name>.atlas and <name>.png are packed next to it.\n' +
       'defold       --out is a folder in a Defold project: .rigbyskel, .atlas, images/, .rigbymodel and .go.\n' +
-      'spritesheet  --out is a folder: frames rendered into sheets (--sheet json|defold|frames).',
+      'spritesheet  --out is a folder: frames rendered into sheets (--sheet json|defold|frames).\n' +
+      'Exports fail before writing files when required artwork is missing.',
     positionals: ['project'],
     outputOf: (a) => (/\.(json|skel)$/i.test(a.out ?? '') ? a.out : undefined),
     options: {

@@ -43,12 +43,15 @@ test('validation decodes loose JPEG images when FFmpeg is available', async t =>
     const encoded = spawnSync('ffmpeg', ['-v', 'error', '-f', 'webp_pipe', '-i', 'pipe:0', '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'], { input: webp, windowsHide: true });
     assert.equal(encoded.status, 0, encoded.stderr.toString());
     await fs.writeFile(path.join(folder, 'body.jpg'), encoded.stdout);
-    const model = { skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 'slot', bone: 'root', attachment: 'body' }], skins: [{ name: 'default', attachments: { slot: { body: { width: 16, height: 16 } } } }] };
+    const model = { skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 'slot', bone: 'root', attachment: 'body' }], skins: [{ name: 'default', attachments: { slot: { body: { width: 16, height: 16 } } } }], animations: { idle: { bones: { root: { rotate: [{ value: 0 }, { time: 1, value: 20 }] } } } } };
     const file = path.join(dir, 'model.json');
     await fs.writeFile(file, JSON.stringify(model));
     const tools = createTools(await Workspace.open([dir]));
     const report = await tools.find(x => x.name === 'validate_project').handler({ path: file });
     assert.equal(report.valid, true, report.errors.join('; '));
     assert.equal(report.checks.images, 'ok');
+    await tools.find(x => x.name === 'export_sprite_sheet').handler({ input: file, output_folder: dir, name: 'sheet', fps: 2 });
+    const sheet = decodePng(await fs.readFile(path.join(dir, 'sheet.png')));
+    assert.ok(sheet.data.some((v, i) => i % 4 === 3 && v > 0));
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
