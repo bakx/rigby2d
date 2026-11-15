@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import { parseAtlas } from '../core/atlas.js';
 import { isSkeletonBinary, readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
+import { decodeKtx2, isKtx2 } from '../core/ktx2.js';
 import { listConstraints } from '../core/constraintdata.js';
 import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/interop.js';
 import { Skeleton } from '../core/model.js';
@@ -458,6 +459,23 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
 
 // ---- images -----------------------------------------------------------------------------------
 
+let basisPromise;
+async function readPage(file) {
+  const bytes = await fs.readFile(file);
+  if (!isKtx2(bytes)) return decodePng(bytes);
+  if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });
+  return decodeKtx2(bytes, await basisPromise);
+}
+
+function straightAlpha(data) {
+  const out = data.slice();
+  for (let i = 0; i < out.length; i += 4) {
+    const a = out[i + 3];
+    if (a > 0 && a < 255) for (let c = 0; c < 3; c++) out[i + c] = Math.min(255, Math.round(out[i + c] * 255 / a));
+  }
+  return out;
+}
+
 /**
  * The images of a loaded project named in `names` (a Set): from the work file, an images folder,
  * or unpacked from the atlas. Returns Map(name -> { bytes } (PNG) or { width, height, rgba }).
@@ -470,7 +488,10 @@ export async function projectImages(p, names) {
   } else if (p.imageSource?.startsWith('atlas ')) {
     const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
     const pages = new Map();
-    for (const page of atlas.pages) pages.set(page.name, decodePng(await fs.readFile(path.join(dir, page.name))));
+    for (const page of atlas.pages) {
+      const tex = await readPage(path.join(dir, page.name));
+      pages.set(page.name, page.pma || tex.pma ? { ...tex, data: straightAlpha(tex.data) } : tex);
+    }
     for (const [n, picture] of unpackAtlas(atlas, pages)) if (names.has(n)) images.set(n, picture);
   } else if (p.imageSource?.startsWith('folder ')) {
     const imagesDir = path.join(dir, p.imageSource.slice(7));
@@ -538,7 +559,10 @@ async function rasterLookup(p) {
   if (p.imageSource?.startsWith('atlas ')) {
     const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
     const pages = new Map();
-    for (const page of atlas.pages) pages.set(page.name, decode(await fs.readFile(path.join(dir, page.name)), page.pma));
+    for (const page of atlas.pages) {
+      const tex = await readPage(path.join(dir, page.name));
+      pages.set(page.name, { ...tex, pma: page.pma || !!tex.pma });
+    }
     return atlasLookup(atlas, (page) => pages.get(page.name));
   }
   if (p.imageSource?.startsWith('folder ')) {

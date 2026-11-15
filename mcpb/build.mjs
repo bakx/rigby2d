@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Builds the Rigby2D MCP Bundle (.mcpb): a one-file, double-click install of the MCP server for
 // Claude Desktop, which brings its own Node.js. The server's files are found by following its
-// imports from src/mcp/server.js, so the bundle holds exactly what the server uses, plus Pyodide
-// (Python scripts) and ag-psd (PSD files). Output: dist-mcpb/Rigby2D-AI-<version>.mcpb and
+// imports from src/mcp/server.js, so the bundle holds the server and its runtime dependencies.
+// Output: dist-mcpb/Rigby2D-AI-<version>.mcpb and
 // dist-mcpb/Rigby2D-AI.mcpb (the same file under a fixed name, for "latest" download links).
 //
 //   node mcpb/build.mjs
@@ -61,14 +61,14 @@ for (const f of files) copy(f, path.join(server, path.relative(repo, f)));
 // server.js reads its version from ../../package.json.
 fs.writeFileSync(path.join(server, 'package.json'), JSON.stringify({ name: 'rigby2d-mcp', version: pkg.version, private: true, type: 'module' }, null, 2));
 
-// ---- dependencies: Pyodide (run_script) and ag-psd (PSD files) -----------------------------
+// ---- dependencies: scripting, PSD and texture decoding -------------------------------------
 
 const nm = path.join(repo, 'node_modules');
 const PYODIDE = ['package.json', 'pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json', 'LICENSE'];
 for (const f of PYODIDE) if (fs.existsSync(path.join(nm, 'pyodide', f))) copy(path.join(nm, 'pyodide', f), path.join(server, 'node_modules', 'pyodide', f));
 // Only what Node loads: package.json, the licence, the main file and the built code (dist/, lib/).
 // Sources, typings, maps, dev scripts and caches (.v8-cache) stay out.
-for (const dep of ['ag-psd', 'base64-js', 'pako']) {
+for (const dep of ['ag-psd', 'base64-js', 'pako', 'ktx2-encoder', 'ktx-parse']) {
   const from = path.join(nm, dep);
   const main = path.normalize(JSON.parse(fs.readFileSync(path.join(from, 'package.json'), 'utf8')).main ?? 'index.js');
   copyDir(from, path.join(server, 'node_modules', dep), (f) => {

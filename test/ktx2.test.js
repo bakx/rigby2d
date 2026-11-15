@@ -9,11 +9,13 @@ import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 import { NodeBasisEncoder } from 'ktx2-encoder';
 import { decodeKtx2, isKtx2 } from '../src/core/ktx2.js';
+import { createTools, loadProject, projectImages, Workspace } from '../src/mcp/tools.js';
+import { decodePng } from '../src/mcp/png.js';
 
-async function encoded(basis, uastc) {
+async function encoded(basis, uastc, pixel = [220, 30, 40, 255]) {
   const width = 16, height = 16;
   const rgba = new Uint8Array(width * height * 4);
-  for (let i = 0; i < rgba.length; i += 4) rgba.set([220, 30, 40, 255], i);
+  for (let i = 0; i < rgba.length; i += 4) rgba.set(pixel, i);
   const encoder = new basis.BasisEncoder();
   try {
     encoder.setCreateKTX2File(true);
@@ -45,6 +47,30 @@ test('KTX2 decoder reads ETC1S and UASTC images and rejects invalid data', async
   }
   assert.equal(isKtx2(new Uint8Array(100)), false);
   await assert.rejects(decodeKtx2(new Uint8Array(100), basis), /Invalid|KTX2/);
+});
+
+test('Node project tools unpack KTX2 atlas regions', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rigby-ktx-test-'));
+  try {
+    const basis = await new NodeBasisEncoder().init();
+    const texture = await encoded(basis, true, [100, 15, 20, 128]);
+    const dfd = new DataView(texture.buffer, texture.byteOffset, texture.byteLength).getUint32(48, true);
+    texture[dfd + 15] |= 1;
+    await fs.writeFile(path.join(dir, 'page.ktx2'), texture);
+    await fs.writeFile(path.join(dir, 'model.atlas'), 'page.ktx2\nsize: 16,16\nfilter: Linear,Linear\nrepeat: none\nbody\n  bounds: 0,0,16,16\n');
+    const model = { skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 'slot', bone: 'root', attachment: 'body' }], skins: [{ name: 'default', attachments: { slot: { body: { width: 16, height: 16 } } } }], animations: { idle: { bones: { root: { rotate: [{ value: 0 }, { time: 1, value: 20 }] } } } } };
+    const file = path.join(dir, 'model.json');
+    await fs.writeFile(file, JSON.stringify(model));
+    const images = await projectImages(await loadProject(file), new Set(['body']));
+    const image = images.get('body');
+    assert.equal(image.width, 16);
+    assert.equal(image.height, 16);
+    assert.ok(image.rgba[0] > 180 && image.rgba[1] < 70 && image.rgba[3] > 110 && image.rgba[3] < 145);
+    const tool = createTools(await Workspace.open([dir])).find(t => t.name === 'export_sprite_sheet');
+    await tool.handler({ input: file, output_folder: dir, name: 'sheet', fps: 2 });
+    const sheet = decodePng(await fs.readFile(path.join(dir, 'sheet.png')));
+    assert.ok(sheet.data.some((v, i) => i % 4 === 3 && v > 0));
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
 test('editor loads and renders a KTX2 atlas', async t => {
