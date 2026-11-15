@@ -463,9 +463,10 @@ function distanceToSegment(p, a, b) {
  * Automatic weights: each point is weighted to the bones (given as world segments
  * { bone, from, to }) by inverse distance to the bone, sharpened so the nearest bone dominates.
  */
-export function autoWeights(points, bones) {
+export function autoWeights(points, bones, falloff = 4) {
+  if (!Number.isFinite(falloff) || falloff <= 0) throw new Error('falloff must be positive.');
   return points.map((p) => {
-    const raw = bones.map(({ bone, from, to }) => ({ bone, weight: 1 / Math.pow(distanceToSegment(p, from, to) + 1, 4) }));
+    const raw = bones.map(({ bone, from, to }) => ({ bone, weight: 1 / Math.pow(distanceToSegment(p, from, to) + 1, falloff) }));
     // Relative weights first: far from every bone the raw values are tiny, and dropping small
     // weights before scaling would hand the vertex to the first bone instead of the nearest.
     const total = raw.reduce((s, w) => s + w.weight, 0);

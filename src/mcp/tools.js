@@ -532,7 +532,7 @@ async function encodeAtlasPage(page, format, options) {
 // ---- images -----------------------------------------------------------------------------------
 
 let basisPromise;
-async function readPage(file) {
+export async function readPage(file) {
   const bytes = await fs.readFile(file);
   if (isKtx2(bytes)) {
     if (!basisPromise) basisPromise = import('ktx2-encoder').then(({ NodeBasisEncoder }) => new NodeBasisEncoder().init()).catch(e => { basisPromise = null; throw e; });

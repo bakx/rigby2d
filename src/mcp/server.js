@@ -79,6 +79,8 @@ async function main() {
       'save the file they are given in its own format, or a copy when output is set; check results with sample_pose or validate_project. ' +
       '.rigby work files also hold the workspace (set_workspace), film output settings (set_output), the pose library (save_pose, apply_pose), ' +
       'face controls (add_face_control, set_face_control), and audio tracks with lip-sync (add_audio_track, lip_sync); inspect_project lists them. ' +
+      'Rig authoring tools add skins and attachments, create and weight meshes, duplicate or replace artwork, and key constraints; batch_edit applies them atomically. ' +
+      'convert_project can pack atlas pages with atlas: true, including KTX2 or WebP. ' +
       'run_script runs a Python script with the rigby scripting API for anything the other tools do not cover (dry_run: true for queries). ' +
       'Scenes: add_actor puts characters (other .rigby files) on a stage, add_clip places their animations on the scene shots, set_actor and set_layer_depth stage them. autorig rigs layered artwork (a PSD or an unrigged .rigby) in one step; detect_parts previews it. retarget_animation copies animations between characters (map_bones previews the bone matching). ' +
       'Rendering video is done in the editor (File > Render animation). ' +

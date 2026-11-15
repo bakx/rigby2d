@@ -17,6 +17,7 @@ import { zip } from '../editor/zip.js';
 import { ToolError } from './protocol.js';
 import { PATH, loadProject } from './tools.js';
 import { constraintTools } from './constrainttools.js';
+import { createAuthoringTools } from './authoring.js';
 
 const CURVES = { linear: LINEAR, stepped: STEPPED, easeIn: EASE_IN, easeOut: EASE_OUT, easeInOut: EASE_IN_OUT };
 const CHANNELS = ['rotate', 'translate', 'scale', 'shear'];
@@ -387,7 +388,8 @@ export function createEditTools(ws) {
   ];
   // Each tool loads the project, applies its edit, validates and saves.
   for (const t of tools) t.handler = (args) => edit(ws, args, (doc) => t.apply(doc, args));
-  return [...tools, batchTool(ws, tools)];
+  const authoring = createAuthoringTools(ws);
+  return [...tools, ...authoring, batchTool(ws, [...tools, ...authoring])];
 }
 
 // ---- batch ------------------------------------------------------------------------------------
@@ -440,16 +442,16 @@ function batchTool(ws, tools) {
         const problems = checkArguments(op.schema, o);
         if (problems.length) throw new ToolError(`Operation ${i + 1} (${o.op}): ${problems.join('; ')}.`);
       });
-      return edit(ws, args, (doc) => {
+      return edit(ws, args, async (doc, p) => {
         const counts = {};
-        args.operations.forEach((o, i) => {
+        for (const [i, o] of args.operations.entries()) {
           try {
-            ops.get(o.op).tool.apply(doc, o);
+            await ops.get(o.op).tool.apply(doc, o, p);
           } catch (e) {
             throw new ToolError(`Operation ${i + 1} (${o.op}) failed, so nothing was saved: ${e.message}`);
           }
           counts[o.op] = (counts[o.op] ?? 0) + 1;
-        });
+        }
         return { applied: args.operations.length, operations: counts, animations: doc.animations.map((a) => ({ name: a.name, duration: a.duration })) };
       });
     },
