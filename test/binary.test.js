@@ -339,6 +339,33 @@ test('4.0 binary reads legacy constraints, attachments and animation keys', asyn
   const { Pose } = await import('../src/core/pose.js');
   const pose = new Pose(doc); pose.apply(doc, doc.animations[0], 0.5, 1); pose.updateWorld(doc);
   assert.ok(pose.world.every(w => [w.a,w.b,w.c,w.d,w.tx,w.ty].every(Number.isFinite)));
-  const unsupported = Uint8Array.from(bytes); unsupported[11] = '1'.charCodeAt(0);
-  assert.throws(() => readSkeletonBinary(unsupported), /Binary format 4\.1/);
+  const unsupported = Uint8Array.from(bytes); unsupported[11] = '5'.charCodeAt(0);
+  assert.throws(() => readSkeletonBinary(unsupported), /Binary format 4\.5/);
+});
+
+test('4.1 binary reads legacy attachments with image sequences', async () => {
+  const bytes = [];
+  const byte = v => bytes.push(v & 255);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0)); string('4.1.17');
+  for (const v of [0,0,100,100]) float(v);
+  byte(1); float(30); byte(0); byte(0); byte(1); string('image'); byte(1); string('root');
+  for (const v of [0,0,0,1,1,0,0,0]) float(v);
+  byte(0); byte(0); bytes.push(155,155,155,255);
+  byte(1); string('slot'); byte(0); bytes.push(...Array(8).fill(255)); byte(1); byte(0);
+  byte(0); byte(0); byte(0); byte(1); byte(0); byte(1); byte(1);
+  byte(0); byte(0); byte(0);
+  for (const v of [0,0,0,1,1,10,20]) float(v);
+  bytes.push(255,255,255,255); byte(1); byte(3); byte(1); byte(2); byte(0);
+  byte(0); byte(0); byte(1); string('move'); byte(1); byte(0);
+  byte(1); byte(0); byte(1); byte(0); byte(2); byte(0);
+  float(0); float(0); float(1); float(90); byte(0);
+  byte(0); byte(0); byte(0); byte(0); byte(0); byte(0);
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.deepEqual(result.skins[0].attachments.slot.image.sequence, { count: 3, digits: 2 });
+  const doc = readSkeletonJson(result).skeleton;
+  const { Pose } = await import('../src/core/pose.js');
+  const pose = new Pose(doc); pose.apply(doc, doc.animations[0], 0.5, 1); pose.updateWorld(doc);
+  assert.ok(pose.world.every(w => [w.a,w.b,w.c,w.d,w.tx,w.ty].every(Number.isFinite)));
 });

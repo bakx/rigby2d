@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// Binary skeleton files (".skel"), writing format 4.3 and reading formats 4.0, 4.2 and 4.3. Converts between the
+// Binary skeleton files (".skel"), writing format 4.3 and reading formats 4.0 through 4.3. Converts between the
 // binary encoding and the skeleton JSON object structure, so all other code works with one
-// representation. A 4.0 or 4.2 file is read into the corresponding JSON structure (typed constraint lists with an
+// representation. A 4.0–4.2 file is read into the corresponding JSON structure (typed constraint lists with an
 // order, fixed transform mixes), which interop.js reads like a 4.2 JSON export; 4.3 files into the
 // 4.3 structure. The two layouts share everything but: bone length/inherit order, the constraint
 // sections (4.2: IK, transform, path, physics lists, each entry with its order; 4.3: one list with a
@@ -278,8 +278,8 @@ export function readSkeletonBinary(bytes) {
   const hash = toBase64(bytes.subarray(0, 8));
   r.p = 8;
   const version = r.string();
-  r.legacy = /^4\.0(?:\.|$)/.test(version ?? '');
-  r.v40 = r.legacy;
+  r.legacy = /^4\.[01](?:\.|$)/.test(version ?? '');
+  r.v40 = /^4\.0(?:\.|$)/.test(version ?? '');
   r.v42 = /^4\.2/.test(version ?? '');
   if (!r.legacy && !r.v42 && !/^4\.3/.test(version ?? '')) throw new Unsupported(`Binary format ${version}`);
   const skeleton = { hash, [VERSION_FIELD]: version, x: r.float(), y: r.float(), width: r.float(), height: r.float() };
