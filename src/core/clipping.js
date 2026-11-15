@@ -77,11 +77,37 @@ function clipConvex(poly, tri) {
   return out;
 }
 
+/** Subtract a triangle from a convex polygon, preserving interpolated texture coordinates. */
+function subtractTriangle(poly, tri) {
+  let inside = poly;
+  const outside = [];
+  for (let e = 0; e < 3 && inside.length; e++) {
+    const ax = tri[2 * e], ay = tri[2 * e + 1];
+    const bx = tri[(2 * e + 2) % 6], by = tri[(2 * e + 3) % 6];
+    const side = p => (bx - ax) * (p.y - ay) - (by - ay) * (p.x - ax);
+    const inner = [], outer = [];
+    for (let i = 0; i < inside.length; i++) {
+      const p = inside[i], q = inside[(i + 1) % inside.length];
+      const sp = side(p), sq = side(q);
+      (sp >= 0 ? inner : outer).push(p);
+      if ((sp >= 0) !== (sq >= 0)) {
+        const t = sp / (sp - sq);
+        const cross = { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t, u: p.u + (q.u - p.u) * t, v: p.v + (q.v - p.v) * t };
+        inner.push(cross); outer.push(cross);
+      }
+    }
+    if (outer.length >= 3) outside.push(outer);
+    inside = inner;
+  }
+  return outside;
+}
+
 /** An active clipping region: triangles of the clip polygon in world space. */
 export class Clipper {
   /** @param {number[]} polygon world vertices [x, y, ...] */
-  constructor(polygon) {
+  constructor(polygon, { inverse = false } = {}) {
     this.triangles = triangulate(polygon);
+    this.inverse = inverse;
   }
 
   /**
@@ -98,8 +124,12 @@ export class Clipper {
       // Work in counter-clockwise order so "inside" is on the left of every edge.
       const area = (tri[1].x - tri[0].x) * (tri[2].y - tri[0].y) - (tri[1].y - tri[0].y) * (tri[2].x - tri[0].x);
       if (area < 0) tri = [tri[0], tri[2], tri[1]];
-      for (const clip of this.triangles) {
-        const poly = clipConvex(tri, clip);
+      let polygons;
+      if (this.inverse) {
+        polygons = [tri];
+        for (const clip of this.triangles) polygons = polygons.flatMap(poly => subtractTriangle(poly, clip));
+      } else polygons = this.triangles.map(clip => clipConvex(tri, clip));
+      for (const poly of polygons) {
         if (poly.length < 3) continue;
         const base = outP.length / 2;
         for (const p of poly) {

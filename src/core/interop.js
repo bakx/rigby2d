@@ -96,7 +96,7 @@ export function readSkeletonJson(obj, name = 'skeleton') {
   if (!isSkeletonJson(obj)) throw new Error('not a skeleton JSON file');
   const version = versionOf(obj);
   const v4 = version.major >= 4;
-  const warnings = [];
+  const warnings = [...(obj._binaryWarnings ?? [])];
   const sk = new Skeleton();
   sk.name = name;
   const { [VERSION_FIELD]: version_, ...header } = obj.skeleton;
@@ -622,7 +622,7 @@ function setupBounds(sk) {
   for (const i of pose.drawOrder) {
     const att = pose.slotAttachment(sk, i);
     if (att?.type === 'clipping') {
-      clipper = new Clipper(pose.worldVertices(sk, i, att));
+      clipper = new Clipper(pose.worldVertices(sk, i, att), { inverse: !!att.extra?.inverse });
       clipEnd = att.end === i ? null : (att.end ?? null); // ending at its own slot means: to the end
     } else if (quads.has(i)) {
       const q = quads.get(i);

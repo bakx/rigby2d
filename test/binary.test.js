@@ -136,7 +136,7 @@ test('binary round trip with constraints, skins and every supported attachment t
   assert.ok(near(back, RICH), JSON.stringify(back).slice(0, 600));
 });
 
-test('4.3 binary preserves convex clipping metadata', () => {
+test('4.3 binary preserves clipping metadata', () => {
   const json = structuredClone(RICH);
   json.skins[0].attachments.mask.mask.convex = true;
   const back = roundTrip(json);
@@ -145,7 +145,7 @@ test('4.3 binary preserves convex clipping metadata', () => {
   const exported = writeSkeletonJson(model, { version: '4.3', binary: true }).json;
   assert.equal(exported.skins[0].attachments.mask.mask.convex, true);
   json.skins[0].attachments.mask.mask.inverse = true;
-  assert.throws(() => writeSkeletonBinary(json), /Inverse clipping/);
+  assert.equal(roundTrip(json).skins[0].attachments.mask.mask.inverse, true);
 });
 
 test('the document model loads the rich fixture from binary', () => {
@@ -176,17 +176,17 @@ test('the sample robot exports to binary', () => {
   assert.equal(back.animations.length, 2);
 });
 
-test('unsupported features stop with a clear error', () => {
+test('point attachments, RGB keys and sequence modes survive binary encoding', () => {
   const withPoint = structuredClone(FIXTURE);
   withPoint.skins[0].attachments.body.marker = { type: 'point', x: 1, y: 2 };
-  assert.throws(() => writeSkeletonBinary(withPoint), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(withPoint)).skins[0].attachments.body.marker.type, 'point');
   const withRgb = structuredClone(FIXTURE);
   withRgb.animations.run.slots.body.rgb = [{ color: 'ff0000' }];
-  assert.throws(() => writeSkeletonBinary(withRgb), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(withRgb)).animations.run.slots.body.rgb[0].color, 'ff0000');
   const pingPong = structuredClone(FIXTURE);
   pingPong.skins[0].attachments.body.body.sequence = { count: 3 };
   pingPong.animations.run.attachments = { default: { body: { body: { sequence: [{ mode: 'pingpong', delay: 0.1 }] } } } };
-  assert.throws(() => writeSkeletonBinary(pingPong), /not supported in \.skel/);
+  assert.equal(readSkeletonBinary(writeSkeletonBinary(pingPong)).animations.run.attachments.default.body.body.sequence[0].mode, 'pingpong');
   assert.ok(!isSkeletonBinary(new TextEncoder().encode('{"skeleton":{}}')));
 });
 
@@ -194,7 +194,7 @@ test('sequences, sliders, path keys, weighted clipping and stepped IK round-trip
   const json = structuredClone(FIXTURE);
   const body = json.skins[0].attachments.body.body;
   body.sequence = { count: 4, start: 0, digits: 2 };
-  json.constraints.push({ type: 'slider', name: 'spin', animation: 'run', bone: 'hip', property: 'rotate', scale: 0.01, local: true, loop: true, time: 0.5 });
+  json.constraints.push({ type: 'slider', name: 'spin', animation: 'run', bone: 'hip', property: 'rotate', scale: 0.01, local: true, loop: true, max: 0.5 });
   const run = json.animations.run;
   run.attachments = { default: { body: { body: { sequence: [{ mode: 'loop', delay: 0.1 }, { time: 0.4 }, { time: 0.5, mode: 'onceReverse', index: 2, delay: 0.05 }] } } } };
   run.slider = { spin: { mix: [{}, { time: 0.5, value: 0 }] } };
@@ -275,4 +275,32 @@ test('reads 4.2 binary bone metadata without misaligning the skeleton', () => {
   assert.equal(result.bones[1].parent, 'root');
   assert.equal(result.bones[1].x, 10);
   assert.equal(readSkeletonJson(result).skeleton.bones.length, 2);
+});
+
+test('4.3 extended IK and slot channels survive binary round trip', () => {
+  const json = structuredClone(FIXTURE);
+  const ik = json.constraints.find(c => c.type === 'ik');
+  Object.assign(ik, { scaleY: 'volume', compress: true, stretch: true, softness: 3, mix: 0.5 });
+  Object.assign(json.animations.run.slots.body, { rgb: [{ color: 'aabbcc' }], rgb2: [{ light: 'aabbcc', dark: '112233' }], alpha: [{ value: 0.5 }] });
+  const back = readSkeletonBinary(writeSkeletonBinary(json));
+  assert.equal(back.constraints.find(c => c.type === 'ik').scaleY, 'volume');
+  assert.equal(back.constraints.find(c => c.type === 'ik').softness, 3);
+  assert.equal(back.animations.run.slots.body.rgb2[0].dark, '112233');
+  assert.ok(Math.abs(back.animations.run.slots.body.alpha[0].value - 0.5) < 0.003);
+});
+
+test('binary rejects 4.3 mappings that the runtime cannot evaluate', () => {
+  const folders = structuredClone(FIXTURE);
+  folders.animations.run._drawOrderFolders = [{ slots: [0], keys: [] }];
+  assert.throws(() => writeSkeletonBinary(folders), /Draw order folder timelines/);
+  const mappings = structuredClone(FIXTURE);
+  mappings.skins[0].attachments.leg.leg._timelineSlots = [0];
+  assert.throws(() => writeSkeletonBinary(mappings), /Mesh timeline slot mappings/);
+});
+
+test('legacy slider property encoding is preserved and ambiguity is reported', () => {
+  const bytes = Buffer.from('AAAAAAAAAAAGNC4zLjAAAAAAAAAAAAAAAAAAAAAAQsgAAAFB8AAAAAAAAgVyb290AAAAAAAAAAAAAAAAP4AAAD+AAAAAAAAAAAAAAAAAAAAAAJubm/8AP4AAAAAAAAABBWRpYWwAAAAAAAAAAAAAAAAAP4AAAD+AAAAAAAAAAAAAAAAAAAAAAJubm/8AP4AAAAAAAAABAAECcwTaPwAAAAEBAAAAAAAAAAA/AAAAAAAAAQVpZGxlAQABAQEAAgAAAAAAAAAAAD+AAABCNAAAAAAAAAAAAAAAAP////8A', 'base64');
+  const json = readSkeletonBinary(bytes);
+  assert.equal(json.constraints[0].property, 'x');
+  assert.ok(readSkeletonJson(json).warnings.some(w => w.includes('ambiguous property encoding')));
 });

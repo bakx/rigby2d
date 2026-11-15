@@ -140,7 +140,7 @@ export function drawSkeletonGeometry(sk, pose, lookup, emit, { tint = [1, 1, 1, 
     const att = slot ? pose.slotAttachment(sk, i) : null;
     const type = att ? (att.type ?? 'region') : null;
     if (att && type === 'clipping' && !skip?.(i, att)) {
-      clipper = new Clipper(pose.worldVertices(sk, i, att));
+      clipper = new Clipper(pose.worldVertices(sk, i, att), { inverse: !!att.extra?.inverse });
       clipEnd = att.end === i ? null : (att.end ?? null); // ending at its own slot means: to the end
     } else if (att && (type === 'region' || type === 'mesh' || type === 'linkedmesh') && !skip?.(i, att)) {
       attachmentGeometry(sk, pose, i, att, type, lookup, tint, clipper, uv, emit, cache);
