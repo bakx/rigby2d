@@ -4,12 +4,13 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { parseAtlas } from '../core/atlas.js';
+import { atlasFilter, parseAtlas } from '../core/atlas.js';
+import { packAtlas } from '../core/pack.js';
 import { isSkeletonBinary, readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
-import { decodeKtx2, isKtx2 } from '../core/ktx2.js';
+import { decodeKtx2, encodeKtx2, isKtx2 } from '../core/ktx2.js';
 import { listConstraints } from '../core/constraintdata.js';
 import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/interop.js';
 import { Skeleton } from '../core/model.js';
@@ -442,7 +443,7 @@ async function validate(p) {
 
 // ---- conversion -------------------------------------------------------------------------------
 
-async function convert(ws, { input, output, version = '4.3', overwrite = false }) {
+async function convert(ws, { input, output, version = '4.3', overwrite = false, atlas = false, pma = false, filter, padding = 2, max_size = 4096, power_of_two = false, scale = 1, trim = false, texture_format = 'png', codec = 'etc1s', quality = 128, mipmaps = false, zstd = true, fallback = 'none' }) {
   const source = await ws.existing(input);
   const target = await ws.writable(output);
   if (path.resolve(source) === path.resolve(target)) throw new ToolError('The output must be a different file than the input.');
@@ -469,7 +470,34 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
   } catch (e) {
     throw new ToolError(`Conversion failed: ${e.message}`);
   }
+  let atlasInfo = null;
+  const atlasFiles = [];
+  if (atlas) {
+    if (!Number.isInteger(padding) || padding < 0 || padding > 64 || !Number.isInteger(max_size) || max_size < 64 || max_size > 16384 || !Number.isFinite(scale) || scale <= 0 || scale > 4 || !Number.isInteger(quality) || quality < 1 || quality > 255) throw new ToolError('Invalid atlas packing or quality settings.');
+    if (!['png', 'webp', 'ktx2'].includes(texture_format) || !['etc1s', 'uastc'].includes(codec) || !['none', 'png', 'webp'].includes(fallback) || (filter && !['Linear', 'Nearest'].includes(filter))) throw new ToolError('Invalid atlas format or filter.');
+    if (p.doc.scene) throw new ToolError('Scene atlases must be exported from the editor.');
+    const stem = target.slice(0, -ext.length), dir = path.dirname(target);
+    const images = await projectImages(p, new Set(usedImages(p.doc)));
+    const pixel = n => { const v = images.get(n); return v ? (v.bytes ? decodePng(v.bytes) : { width: v.width, height: v.height, data: v.rgba }) : null; };
+    let packed;
+    try { packed = packAtlas(p.doc, pixel, { name: path.basename(stem), filter: filter ? [filter, filter] : atlasFilter(p.doc.textureFilter), padding, maxSize: max_size, powerOfTwo: power_of_two, pma, trim, scale, ext: texture_format }); }
+    catch (e) { throw new ToolError(`Atlas packing failed: ${e.message}`); }
+    if (packed.missing.length) throw new ToolError(`Cannot export: ${packed.missing.length} required image(s) are missing: ${packed.missing.slice(0, 20).join(', ')}.`);
+    const extra = texture_format === 'ktx2' && fallback !== 'none' ? fallback : null;
+    const paths = [`${stem}.atlas`, ...packed.pages.map(pg => path.join(dir, pg.name)), ...(extra ? packed.pages.map(pg => path.join(dir, pg.name.replace(/\.ktx2$/, `.${extra}`))) : [])];
+    for (const file of paths) {
+      await ws.writable(file);
+      if (!overwrite && await fs.stat(file).then(() => true, () => false)) throw new ToolError(`${file} already exists. Pass overwrite: true to replace it.`);
+    }
+    atlasFiles.push([paths[0], packed.atlas]);
+    for (const [i, pg] of packed.pages.entries()) {
+      atlasFiles.push([paths[1 + i], await encodeAtlasPage(pg, texture_format, { codec, quality, mipmaps, zstd, pma })]);
+    }
+    if (extra) for (const [i, pg] of packed.pages.entries()) atlasFiles.push([paths[1 + packed.pages.length + i], await encodeAtlasPage(pg, extra, {})]);
+    atlasInfo = { file: paths[0], textureFormat: texture_format, pages: packed.pages.map((pg, i) => ({ file: paths[1 + i], width: pg.width, height: pg.height, regions: pg.regions.length })), fallback: extra, pma, scale, trim };
+  }
   await fs.writeFile(target, bytes);
+  for (const [file, data] of atlasFiles) await fs.writeFile(file, data);
   return {
     input: source,
     output: target,
@@ -477,8 +505,28 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false }
     version: ext === '.skel' ? '4.3' : version,
     bytes: bytes.length,
     warnings,
-    note: 'Only skeleton data is written. Use the existing .atlas and page images, or export from the Rigby2D editor to repack them.',
+    atlas: atlasInfo,
+    note: atlasInfo ? 'Skeleton and packed atlas written.' : 'Only skeleton data is written; set atlas: true to pack the artwork.',
   };
+}
+
+// Encode pages without writing codec progress to the MCP protocol's stdout.
+async function encodeAtlasPage(page, format, options) {
+  if (format === 'png') return encodePng(page);
+  if (format === 'ktx2') {
+    if (!basisPromise) basisPromise = import(new URL('../basis/basis_encoder.js', import.meta.resolve('ktx2-encoder')).href).then(({ default: create }) => create({ print() {}, printErr() {} })).then(b => { b.initializeBasis(); return b; }).catch(e => { basisPromise = null; throw e; });
+    return encodeKtx2(page, options, await basisPromise);
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn('ffmpeg', ['-v', 'error', '-f', 'image2pipe', '-vcodec', 'png', '-i', 'pipe:0', '-frames:v', '1', '-c:v', 'libwebp', '-lossless', '1', '-f', 'webp', 'pipe:1'], { windowsHide: true });
+    const output = [], errors = [];
+    child.stdout.on('data', b => output.push(b));
+    child.stderr.on('data', b => errors.push(b));
+    child.on('error', e => reject(new ToolError(`WebP encoding requires FFmpeg: ${e.message}`)));
+    child.on('close', code => code === 0 ? resolve(Buffer.concat(output)) : reject(new ToolError(`WebP encoding failed: ${Buffer.concat(errors).toString()}`)));
+    child.stdin.on('error', () => {});
+    child.stdin.end(encodePng(page));
+  });
 }
 
 // ---- images -----------------------------------------------------------------------------------
@@ -740,14 +788,28 @@ export function createTools(ws) {
     {
       name: 'convert_project',
       title: 'Convert project',
-      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. Writes skeleton data only; atlas and images are not repacked. Refuses to replace an existing file unless overwrite is true.',
+      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true, packs all required artwork into PNG, WebP, or KTX2 pages; missing artwork fails the export. Refuses to replace an existing file unless overwrite is true.',
       inputSchema: {
         type: 'object',
         properties: {
           input: PATH,
           output: { type: 'string', description: 'Output file ending in .json or .skel, inside the workspace. Its folder must exist.' },
           version: { type: 'string', enum: JSON_VERSIONS, description: 'Skeleton JSON format version (default 4.3; .skel is always 4.3).' },
-          overwrite: { type: 'boolean', description: 'Replace the output file if it exists (default false).' },
+          overwrite: { type: 'boolean', description: 'Replace output files (default false).' },
+          atlas: { type: 'boolean', description: 'Pack required artwork into atlas pages.' },
+          pma: { type: 'boolean', description: 'Premultiply page pixels and mark the atlas.' },
+          filter: { type: 'string', enum: ['Linear', 'Nearest'] },
+          padding: { type: 'integer', minimum: 0, maximum: 64 },
+          max_size: { type: 'integer', minimum: 64, maximum: 16384 },
+          power_of_two: { type: 'boolean' },
+          scale: { type: 'number', exclusiveMinimum: 0, maximum: 4 },
+          trim: { type: 'boolean' },
+          texture_format: { type: 'string', enum: ['png', 'webp', 'ktx2'] },
+          codec: { type: 'string', enum: ['etc1s', 'uastc'] },
+          quality: { type: 'integer', minimum: 1, maximum: 255 },
+          mipmaps: { type: 'boolean' },
+          zstd: { type: 'boolean' },
+          fallback: { type: 'string', enum: ['none', 'png', 'webp'] },
         },
         required: ['input', 'output'],
         additionalProperties: false,

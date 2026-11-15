@@ -14,6 +14,7 @@ import { ErrorCode, PROTOCOL_VERSIONS, ToolError, checkArguments, createServer }
 import { createEditTools } from '../src/mcp/edits.js';
 import { Workspace, createTools } from '../src/mcp/tools.js';
 import { unzip } from '../src/editor/zip.js';
+import { pack } from '../src/core/pack.js';
 
 const REPO = path.resolve(fileURLToPath(import.meta.url), '../..');
 const RIGBY = 'branding/rigbytron/rigbytron.rigby';
@@ -288,4 +289,32 @@ test('mcp server: answers over stdio', async () => {
   assert.equal(byId.get(3).result.structuredContent.counts.bones, 11);
   assert.equal(byId.get(null).error.code, ErrorCode.PARSE_ERROR);
   assert.equal(lines.length, 4);
+});
+
+
+test('mcp conversion packs atlas pages and refuses missing artwork before writing', async () => {
+  const { tmp, tools } = await toolbox();
+  const out = path.join(tmp, 'packed.json');
+  const result = await tools.convert_project({ input: RIGBY, output: out, atlas: true, texture_format: 'ktx2', codec: 'uastc', fallback: 'png' });
+  assert.ok(result.atlas.pages.length > 0);
+  assert.ok((await fs.readFile(result.atlas.pages[0].file)).length > 80);
+  assert.match(await fs.readFile(path.join(tmp, 'packed.atlas'), 'utf8'), /packed.*\.ktx2/);
+  assert.ok((await fs.stat(path.join(tmp, 'packed.png'))).size > 0);
+  assert.equal((await tools.validate_project({ path: out })).valid, true);
+  await assert.rejects(tools.convert_project({ input: RIGBY, output: out, atlas: true }), /already exists/);
+  const incomplete = path.join(tmp, 'incomplete.json');
+  await fs.writeFile(incomplete, JSON.stringify({ skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 's', bone: 'root', attachment: 'art' }], skins: [{ name: 'default', attachments: { s: { art: { width: 8, height: 8 } } } }] }));
+  const target = path.join(tmp, 'incomplete-out.json');
+  await assert.rejects(tools.convert_project({ input: incomplete, output: target, atlas: true }), /missing/);
+  await assert.rejects(fs.access(target));
+  await assert.rejects(tools.convert_project({ input: RIGBY, output: target, atlas: true, max_size: 999999 }), /Invalid atlas/);
+});
+
+
+test('atlas packing splits pages and enforces power-of-two limits', () => {
+  const items = Array.from({ length: 3 }, (_, i) => ({ name: `region${i}`, width: 40, height: 40 }));
+  const pages = pack(items, { maxSize: 64, padding: 2, powerOfTwo: true });
+  assert.equal(pages.length, 3);
+  assert.ok(pages.every(p => p.width === 64 && p.height === 64));
+  assert.throws(() => pack(items, { maxSize: 100, powerOfTwo: true }), /power-of-two/);
 });
