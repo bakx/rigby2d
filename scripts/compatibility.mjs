@@ -22,7 +22,7 @@ if (within(canonicalRoot, reportTarget)) throw new Error('The report must be out
 const entries = await discoverProjects(canonicalRoot);
 const reportFile = await fs.open(report, 'wx');
 await reportFile.close();
-const vite = await createViteServer({ root: app, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+const vite = await createViteServer({ root: app, server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' });
 const server = http.createServer((req, res) => {
   if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><meta charset="utf-8">'); return; }
   vite.middlewares(req, res);
@@ -35,7 +35,10 @@ try {
     const page = await browser.newPage();
     const errors = [];
     const consoleWarnings = [];
-    page.on('pageerror', e => errors.push(e.message));
+    page.on('pageerror', e => {
+      if (e.stack?.includes('/@vite/client')) consoleWarnings.push(e.message);
+      else errors.push(e.message);
+    });
     page.on('console', message => { if (['warning', 'error'].includes(message.type())) consoleWarnings.push(message.text()); });
     await page.exposeFunction('readCompatibilityFile', async p => {
       const resolved = await fs.realpath(path.resolve(p));
@@ -60,7 +63,10 @@ try {
     } catch (e) { result = { result: 'UNVERIFIED', reason: `Browser validation could not complete: ${e.message}` }; }
     result.errors = errors;
     result.consoleWarnings = consoleWarnings;
-    if (errors.length && result.result === 'UNVERIFIED') result.result = 'PARTIAL';
+    if (errors.length && result.result === 'UNVERIFIED') {
+      result.result = 'PARTIAL';
+      result.reason = 'Browser page reported an error';
+    }
     results.push({ ...entry, ...result });
     await page.close();
     await fs.writeFile(report, JSON.stringify({ root: canonicalRoot, total: entries.length, results }, null, 2));

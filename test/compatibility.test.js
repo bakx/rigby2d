@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { discoverProjects } from '../scripts/compatibility-discovery.js';
+import { classifyLoadError } from '../scripts/compatibility-classification.js';
 
 test('compatibility discovery finds editor projects recursively and excludes unrelated JSON', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rigby-compat-test-'));
@@ -18,6 +19,13 @@ test('compatibility discovery finds editor projects recursively and excludes unr
     const entries = await discoverProjects(dir);
     assert.deepEqual(entries.map(e => e.kind).sort(), ['Rigby2D work file', 'binary skeleton', 'skeleton JSON'].sort());
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('compatibility diagnostics distinguish unsupported input from loader failure', () => {
+  assert.equal(classifyLoadError('Binary format is not supported', false), 'UNSUPPORTED');
+  assert.equal(classifyLoadError('invalid JSON: unexpected token', false), 'INVALID');
+  assert.equal(classifyLoadError('cannot read file', false), 'FAIL');
+  assert.equal(classifyLoadError('unsupported feature in rendering', true), 'PARTIAL');
 });
 
 test('compatibility runner refuses reports inside the input tree and existing reports', async () => {

@@ -87,8 +87,9 @@ test('editor loads and renders a KTX2 atlas', async t => {
     const report = path.join(dir, 'report.json');
     await promisify(execFile)(process.execPath, ['scripts/compatibility.mjs', input, report], { timeout: 60000 }).catch(e => { if (e.code !== 1) throw e; });
     const result = JSON.parse(await fs.readFile(report, 'utf8')).results[0];
+    assert.equal(result.result, 'UNVERIFIED', JSON.stringify(result));
     assert.deepEqual(result.warnings, []);
-    assert.deepEqual(result.errors.filter(message => !message.includes('WebSocket closed without opened')), []);
+    assert.deepEqual(result.errors, []);
     assert.equal(result.stages.images.loaded, 1);
     assert.equal(result.stages.render.nonempty, 2);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }

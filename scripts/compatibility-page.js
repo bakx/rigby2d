@@ -4,6 +4,7 @@ import { openProject, usedImages } from '../src/editor/io.js';
 import { Images } from '../src/editor/images.js';
 import { Pose } from '../src/core/pose.js';
 import { FrameRenderer } from '../src/editor/render/offline.js';
+import { classifyLoadError } from './compatibility-classification.js';
 
 const fs = {
   async readFile(p) { const data = atob(await window.readCompatibilityFile(p)); return Uint8Array.from(data, c => c.charCodeAt(0)); },
@@ -54,5 +55,8 @@ export async function validate(file) {
     stages.render = { frames: rendered, nonempty };
     const partial = stages.structure !== 'ok' || nonfinite || missingImages.length || warnings.length || (needed.length > 0 && nonempty === 0);
     return { result: partial ? 'PARTIAL' : 'UNVERIFIED', reason: partial ? 'Review warnings or failed validation stages' : 'Rendered frames require visual and motion review', version: doc.header?.version ?? doc.format ?? null, warnings, stages };
-  } catch (e) { return { result: stages.load ? 'PARTIAL' : 'FAIL', reason: String(e?.message ?? e), stages }; }
+  } catch (e) {
+    const reason = String(e?.message ?? e);
+    return { result: classifyLoadError(reason, !!stages.load), reason, stages };
+  }
 }
