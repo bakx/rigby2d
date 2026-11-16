@@ -31,6 +31,7 @@ export function usedImages(doc) {
  * with regions ({ name, x, y, width, height }) sorted by name.
  */
 export function pack(items, { padding = 2, maxSize = 8192, powerOfTwo = true } = {}) {
+  if (powerOfTwo && (maxSize & (maxSize - 1)) !== 0) throw new Error('a power-of-two atlas requires a power-of-two maximum size');
   const fit = (n) => (powerOfTwo ? nextPowerOfTwo(n) : n);
   const widest = items.reduce((m, it) => Math.max(m, it.width + padding * 2), 1);
   if (widest > maxSize || items.some((it) => it.height + padding * 2 > maxSize)) throw new Error(`an image does not fit in a ${maxSize}px atlas`);

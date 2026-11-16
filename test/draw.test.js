@@ -63,3 +63,36 @@ test('tint multiplies, skip leaves out, and images without an atlas work', () =>
   drawSkeletonGeometry(sk, pose, lookup, (tex) => skipped.push(tex), { skip: (slot) => slot === 0 });
   assert.deepEqual(skipped, ['texB']);
 });
+
+test('inverse clipping removes the mask interior and interpolates texture coordinates', async () => {
+  const { Clipper } = await import('../src/core/clipping.js');
+  const positions = [0, 0, 2, 0, 0, 2];
+  const uvs = [0, 0, 1, 0, 0, 1];
+  const polygon = [0, 0, 1, 0, 1, 1, 0, 1];
+  let area = 0;
+  new Clipper(polygon, { inverse: true }).clip(positions, uvs, [0, 1, 2], (p, uv, tris) => {
+    for (let i = 0; i < p.length; i += 2) { assert.ok(Math.abs(uv[i] - p[i] / 2) < 1e-6); assert.ok(Math.abs(uv[i + 1] - p[i + 1] / 2) < 1e-6); }
+    for (let i = 0; i < tris.length; i += 3) {
+      const [a, b, c] = tris.slice(i, i + 3).map(n => [p[2 * n], p[2 * n + 1]]);
+      area += Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])) / 2;
+    }
+  });
+  assert.ok(Math.abs(area - 1) < 1e-6);
+});
+
+test('inverse clipping attachments affect the skeleton draw path', () => {
+  const json = {
+    skeleton: { spine: '4.3.0' }, bones: [{ name: 'root' }],
+    slots: [{ name: 'mask', bone: 'root', attachment: 'mask' }, { name: 'body', bone: 'root', attachment: 'body' }],
+    skins: [{ name: 'default', attachments: { mask: { mask: { type: 'clipping', end: 'body', vertexCount: 4, vertices: [-1,-1,1,-1,1,1,-1,1], inverse: true } }, body: { body: { width: 4, height: 4 } } } }],
+  };
+  const sk = readSkeletonJson(json).skeleton, pose = new Pose(sk);
+  let area = 0;
+  drawSkeletonGeometry(sk, pose, imageLookup(new Map([['body', {}]])), (_tex, _blend, p, _uv, triangles) => {
+    for (let i = 0; i < triangles.length; i += 3) {
+      const [a,b,c] = triangles.slice(i,i+3).map(n => [p[2*n],p[2*n+1]]);
+      area += Math.abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])) / 2;
+    }
+  });
+  assert.ok(Math.abs(area - 12) < 1e-6, `drawn area ${area}`);
+});

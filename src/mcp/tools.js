@@ -414,6 +414,7 @@ async function validate(p) {
   let pages = 'not checked';
   if (p.atlas) {
     pages = 'ok';
+    if (!p.atlas.pages.length) { pages = 'failed'; errors.push('The atlas contains no pages.'); }
     for (const page of p.atlas.pages) {
       try {
         const tex = await readPage(path.join(path.dirname(p.file), page.name));
@@ -430,12 +431,34 @@ async function validate(p) {
 
   const needed = usedImages(doc);
   let missingImages = [];
+  let imageCheck = 'ok';
   if (p.images) {
     const have = new Set(p.images);
     missingImages = needed.filter((n) => !have.has(n));
-    if (missingImages.length) errors.push(`${missingImages.length} image(s) missing from the ${p.imageSource}: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
+    if (missingImages.length) {
+      imageCheck = 'missing';
+      errors.push(`${missingImages.length} image(s) missing from the ${p.imageSource}: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
+    }
   } else if (needed.length) {
-    warnings.push(`No .atlas or images folder found next to the file, so the ${needed.length} image(s) it uses were not checked.`);
+    imageCheck = 'missing';
+    errors.push(`No .atlas or images folder found for the ${needed.length} required image(s).`);
+  }
+  if (p.images && needed.length) {
+    try {
+      const found = await projectImages(p, new Set(needed));
+      for (const name of needed) {
+        const picture = found.get(name);
+        if (!picture) {
+          if (!missingImages.includes(name)) {
+            imageCheck = 'missing';
+            errors.push(`Required image '${name}' could not be loaded from the ${p.imageSource}.`);
+          }
+        } else if (picture.bytes) decodePng(picture.bytes);
+      }
+    } catch (e) {
+      imageCheck = 'failed';
+      errors.push(`Unable to load required image resources: ${e.message}`);
+    }
   }
 
   for (const a of doc.animations) {
@@ -470,7 +493,7 @@ async function validate(p) {
     animationWarnings: lintAnimations(doc),
     errors,
     warnings,
-    checks: { structure: structure ? 'failed' : 'ok', images: p.images ? (missingImages.length ? 'missing' : 'ok') : 'not checked', pages, jsonRoundTrip: roundTrip, binaryExport },
+    checks: { structure: structure ? 'failed' : 'ok', images: imageCheck, pages, jsonRoundTrip: roundTrip, binaryExport },
   };
 }
 
@@ -505,6 +528,7 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false, 
   }
   let atlasInfo = null, atlasFiles = [];
   if (atlas) {
+    if (!Number.isInteger(padding) || padding < 0 || padding > 64 || !Number.isInteger(max_size) || max_size < 64 || max_size > 16384 || !Number.isFinite(scale) || scale <= 0 || scale > 4) throw new ToolError('Invalid atlas options: padding 0-64, max_size 64-16384, scale above 0 up to 4.');
     const stem = target.slice(0, -ext.length), dir = path.dirname(target);
     const images = await projectImages(p, new Set(usedImages(p.doc)));
     const pixel = (n) => { const v = images.get(n); return v ? (v.bytes ? decodePng(v.bytes) : { width: v.width, height: v.height, data: v.rgba }) : null; };
@@ -523,7 +547,8 @@ async function convert(ws, { input, output, version = '4.3', overwrite = false, 
         if (extra) atlasFiles[1 + packed.pages.length + i][1] = await encodePage(pg, extra);
       }
     } catch (e) { throw e instanceof ToolError ? e : new ToolError(`Encoding the ${texture_format} pages failed: ${e.message}`); }
-    if (packed.missing.length) (warnings ??= []).push(`${packed.missing.length} image(s) not found, left out of the atlas: ${packed.missing.join(', ')}.`);
+    // an atlas without some of its artwork is not a usable game package: refuse before anything is written
+    if (packed.missing.length) throw new ToolError(`${packed.missing.length} image(s) missing, nothing written: ${packed.missing.join(', ')}.`);
     atlasInfo = {
       file: `${stem}.atlas`,
       textureFormat: texture_format,
@@ -567,8 +592,13 @@ export async function projectImages(p, used) {
   } else if (p.imageSource?.startsWith('folder ')) {
     const imagesDir = path.join(dir, p.imageSource.slice(7));
     for (const n of used) {
-      const bytes = await fs.readFile(path.join(imagesDir, `${n}.png`)).catch(() => null);
-      if (bytes) images.set(n, { bytes });
+      for (const ext of ['png', 'jpg', 'jpeg']) {
+        const file = path.join(imagesDir, `${n}.${ext}`);
+        if (!(await fs.stat(file).then(s => s.isFile(), () => false))) continue;
+        if (ext === 'png') images.set(n, { bytes: await fs.readFile(file) });
+        else { const image = await readPage(file); images.set(n, { width: image.width, height: image.height, rgba: image.data }); }
+        break;
+      }
     }
   }
   return images;
@@ -595,6 +625,8 @@ async function defoldModel(ws, { input, output_folder, name, folder, animation =
   const used = new Set(usedImages(p.doc));
   const images = await projectImages(p, used);
   const missing = [...used].filter((n) => !images.has(n));
+  if (missing.length) throw new ToolError(`Cannot export: ${missing.length} required image(s) are missing: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', …' : ''}.`);
+  for (const picture of images.values()) if (picture.bytes) decodePng(picture.bytes);
   const files = defoldModelFiles({ doc: p.doc, images, name: base, folder: projectFolder, animation, skin });
   const targets = [];
   for (const f of files) {
@@ -631,15 +663,17 @@ export async function rasterLookup(p) {
   if (p.imageSource?.startsWith('atlas ')) {
     const atlas = parseAtlas(await fs.readFile(path.join(dir, p.imageSource.slice(6)), 'utf8'));
     const pages = new Map();
-    for (const pg of atlas.pages) pages.set(pg.name, await page(path.join(dir, pg.name), pg.pma));
+    for (const page of atlas.pages) {
+      const tex = await readPage(path.join(dir, page.name));
+      pages.set(page.name, { ...tex, pma: page.pma || !!tex.pma });
+    }
     return atlasLookup(atlas, (page) => pages.get(page.name));
   }
   if (p.imageSource?.startsWith('folder ')) {
-    const folder = path.join(dir, p.imageSource.slice(7));
     const textures = new Map();
-    for (const name of p.images) {
-      const bytes = await fs.readFile(path.join(folder, `${name}.png`)).catch(() => null);
-      if (bytes) textures.set(name, decode(bytes));
+    const pictures = await projectImages(p, new Set(p.images));
+    for (const [name, picture] of pictures) {
+      textures.set(name, picture.bytes ? decode(picture.bytes) : { width: picture.width, height: picture.height, data: picture.rgba });
     }
     return imageLookup(textures);
   }
@@ -659,7 +693,12 @@ async function exportSpriteSheet(ws, args) {
   }
   const missing = (args.animations ?? []).filter((a) => !p.doc.animations.some((x) => x.name === a));
   if (missing.length) throw new ToolError(`No animation ${missing.map((m) => `'${m}'`).join(', ')}. Animations: ${p.doc.animations.map((a) => a.name).join(', ')}.`);
+  const have = new Set(p.images ?? []);
+  const missingImages = usedImages(p.doc).filter((name) => !have.has(name));
+  if (missingImages.length) throw new ToolError(`Cannot export: ${missingImages.length} required image(s) are missing: ${missingImages.slice(0, 20).join(', ')}${missingImages.length > 20 ? ', …' : ''}.`);
   const lookup = await rasterLookup(p);
+  const unavailable = usedImages(p.doc).filter((name) => !lookup(name));
+  if (unavailable.length) throw new ToolError(`Cannot export: ${unavailable.length} required image(s) could not be loaded: ${unavailable.slice(0, 20).join(', ')}${unavailable.length > 20 ? ', …' : ''}.`);
   let result;
   try {
     result = buildSpriteSheet(p.doc, lookup, {
@@ -708,7 +747,7 @@ export function createTools(ws) {
     {
       name: 'inspect_project',
       title: 'Inspect project',
-      description: 'Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, the animations with their durations, and any read warnings.',
+      description: 'Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, atlas-page metadata, animation durations, and read warnings.',
       inputSchema: { type: 'object', properties: { path: PATH }, required: ['path'], additionalProperties: false },
       annotations: READ_ONLY,
       handler: async ({ path: p }) => summary(await load(p)),

@@ -471,6 +471,7 @@ export function readSkeletonBinary(bytes) {
     if (c.animation === undefined) throw new Error('invalid animation index in .skel data');
   }
   if (r.p !== bytes.length) throw new Error(`unexpected data after the animations (${bytes.length - r.p} bytes)`);
+  if (r.warnings?.length) Object.defineProperty(out, '_binaryWarnings', { value: r.warnings });
   return out;
 }
 
@@ -624,8 +625,20 @@ function readSlider(r, name, out, nonessential) {
   else if (flags & SLIDER_MIX_NOT_1) c.mix = r.float();
   if (flags & SLIDER_BONE) {
     c.bone = out.bones[r.varint()].name;
-    const propertyOffset = r.float();
-    const property = TRANSFORM_PROPERTIES[r.byte()];
+    // Older writer revisions placed the property byte before two zero offsets. These bytes are
+    // indistinguishable from an extremely small positive offset in the newer layout, so report
+    // the interpretation for review rather than silently treating it as certain.
+    r.check(9);
+    const oldLayout = r.b[r.p] > 0 && r.b[r.p] < TRANSFORM_PROPERTIES.length && r.b.subarray(r.p + 1, r.p + 9).every(v => v === 0);
+    let propertyOffset, property;
+    if (oldLayout) {
+      property = TRANSFORM_PROPERTIES[r.byte()];
+      propertyOffset = r.float();
+      (r.warnings ??= []).push(`Slider '${name}': ambiguous property encoding interpreted as the legacy layout`);
+    } else {
+      propertyOffset = r.float();
+      property = TRANSFORM_PROPERTIES[r.byte()];
+    }
     if (!property) throw new Unsupported(`Slider property on '${name}'`);
     c.property = property;
     if (propertyOffset) c.propertyOffset = propertyOffset;
@@ -1803,6 +1816,7 @@ function writeLinkedMesh(w, key, a, slotIndex, skinIndex, slot) {
 }
 
 function writeAttachment(w, key, a, slotIndex, skinIndex, slot) {
+  if (a._timelineSlots?.length) throw new Unsupported('Mesh timeline slot mappings');
   const type = a.type ?? 'region';
   if (type === 'point') {
     const named = a.name !== undefined && a.name !== key;
@@ -1900,6 +1914,7 @@ function bezierCount(keys, n) {
 }
 
 function writeAnimation(w, anim, { boneIndex, slotIndex, constraintIndex, skinIndex, transformMapped, eventNames, events }) {
+  if (anim._drawOrderFolders?.length) throw new Unsupported('Draw order folder timelines');
   if (anim.deform && Object.keys(anim.deform).length) throw new Unsupported(`'deform' animation keys`);
   const slots = Object.entries(anim.slots ?? {});
   const bones = Object.entries(anim.bones ?? {});

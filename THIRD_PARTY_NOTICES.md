@@ -75,3 +75,10 @@ The "Coming from DragonBones" section of rigby2d.com shows five DragonBones demo
 4.0, Copyright (c) 2012-2018 The DragonBones team and other contributors. Source:
 <https://github.com/DragonBones/Demos>. Details in `site/showcase/dragonbones/README.md`. Rigby2D is
 not affiliated with DragonBones.
+
+## KTX2 texture decoding
+
+The editor uses the `ktx2-encoder` package (MIT License) for its Basis Universal WebAssembly module.
+Basis Universal is licensed under Apache License 2.0, copyright Binomial LLC, and includes Zstandard
+(BSD 3-Clause License). Source and license details are available at
+https://github.com/BinomialLLC/basis_universal and in the package's third-party notices.

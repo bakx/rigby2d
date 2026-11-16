@@ -68,8 +68,9 @@ function compile(sk) {
         animation,
         bone,
         property: data.property ?? 'rotate',
+        propertyOffset: data.propertyOffset ?? data.from ?? 0,
         scale: data.scale ?? 1,
-        offset: data.offset ?? 0,
+        offset: data.offset ?? data.to ?? 0,
         local: !!data.local,
         loop: !!data.loop,
         additive: !!data.additive,
@@ -107,7 +108,7 @@ function physicsData(d) {
   const globals = {};
   for (const key of PHYSICS_VALUES) globals[key] = !!d[`${key}Global`];
   return {
-    weights: { x: d.x ?? 0, y: d.y ?? 0, rotate: d.rotate ?? 0, scaleX: d.scaleX ?? 0, shearX: d.shearX ?? 0 },
+    weights: { x: d.x ?? 0, y: d.y ?? 0, rotate: d.rotate ?? 0, scaleX: d.scaleX ?? 0, scaleY: d.scaleY ?? 'none', shearX: d.shearX ?? 0 },
     limit: d.limit ?? 5000,
     fps: d.fps ?? 60,
     globals,
@@ -683,6 +684,8 @@ export function solvePhysics(sk, pose, c, state, sim, delta) {
       const f = (Math.hypot(to[0], to[1]) / len - 1) * w.scaleX * mix + 1;
       out.a *= f;
       out.b *= f;
+      if (w.scaleY === 'uniform') { out.c *= f; out.d *= f; }
+      else if (w.scaleY === 'volume') { const divisor = Math.max(Math.abs(f), 1e-8); out.c /= divisor; out.d /= divisor; }
     }
   }
   return { world: new Map([[c.bone, out]]) };
@@ -701,7 +704,7 @@ export function solveSlider(sk, pose, c, state) {
   let time = state.time;
   if (c.bone !== null) {
     const value = c.local ? localProperty(pose.applied[c.bone], c.property) : worldProperty(pose.world[c.bone], c.property);
-    time = value * c.scale + c.offset;
+    time = (value - c.propertyOffset) * c.scale + c.offset;
   }
   const d = anim.duration;
   if (d > 0) time = c.loop ? ((time % d) + d) % d : Math.min(d, Math.max(0, time));

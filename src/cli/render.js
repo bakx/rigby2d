@@ -112,6 +112,12 @@ function startServer(projectDir, sink) {
         res.writeHead(200, { 'content-type': 'text/html' });
         return res.end('<!doctype html><meta charset="utf-8"><title>Rigby2D render</title><script type="module" src="/src/cli/render-page.js"></script>');
       }
+      if (url.pathname === '/basis/basis_encoder.js' || url.pathname === '/basis/basis_encoder.wasm') {
+        const name = path.basename(url.pathname);
+        const bytes = await fs.readFile(path.resolve(SRC, '../node_modules/ktx2-encoder/dist/basis', name));
+        res.writeHead(200, { 'content-type': name.endsWith('.js') ? 'text/javascript' : 'application/wasm' });
+        return res.end(bytes);
+      }
       if (url.pathname === '/fs' || url.pathname === '/ls') {
         const p = path.resolve(projectDir, url.searchParams.get('path') ?? '');
         if (!inside(projectDir, p)) return fail(403, `${p} is outside the project folder`);

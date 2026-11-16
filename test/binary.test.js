@@ -205,6 +205,18 @@ test('binary round trip with constraints, skins and every supported attachment t
   assert.ok(near(back, RICH), JSON.stringify(back).slice(0, 600));
 });
 
+test('4.3 binary preserves clipping metadata', () => {
+  const json = structuredClone(RICH);
+  json.skins[0].attachments.mask.mask.convex = true;
+  const back = roundTrip(json);
+  assert.equal(back.skins[0].attachments.mask.mask.convex, true);
+  const model = readSkeletonJson(back).skeleton;
+  const exported = writeSkeletonJson(model, { version: '4.3', binary: true }).json;
+  assert.equal(exported.skins[0].attachments.mask.mask.convex, true);
+  json.skins[0].attachments.mask.mask.inverse = true;
+  assert.equal(roundTrip(json).skins[0].attachments.mask.mask.inverse, true);
+});
+
 test('the document model loads the rich fixture from binary', () => {
   const { skeleton } = readSkeletonJson(roundTrip(RICH), 'rich');
   assert.equal(skeleton.skins.length, 1);
@@ -348,4 +360,119 @@ test('transform constraint options (local source / target, additive, clamp) roun
   const bytes = writeSkeletonBinary(rig({ local: true, relative: true }));
   const back = readSkeletonBinary(bytes).constraints.find((x) => x.name === 't');
   assert.deepEqual([back.localSource, back.localTarget, back.additive], [true, true, true]);
+});
+
+test('reads 4.2 binary bone metadata without misaligning the skeleton', () => {
+  const bytes = [];
+  const byte = v => bytes.push(v);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0)); string('4.2.43');
+  for (const v of [0, 0, 100, 100, 100]) float(v);
+  byte(1); float(30); byte(0); byte(0);
+  byte(0); byte(2); string('root');
+  for (const v of [0, 0, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); string('icon'); byte(1);
+  string('child'); byte(0);
+  for (const v of [0, 10, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155, 155, 155, 255); byte(0); byte(1);
+  bytes.push(0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.equal(result.bones[0].icon, 'icon');
+  assert.equal(result.bones[1].parent, 'root');
+  assert.equal(result.bones[1].x, 10);
+  assert.equal(readSkeletonJson(result).skeleton.bones.length, 2);
+});
+
+test('4.3 extended IK and slot channels survive binary round trip', () => {
+  const json = structuredClone(FIXTURE);
+  const ik = json.constraints.find(c => c.type === 'ik');
+  Object.assign(ik, { scaleY: 'volume', compress: true, stretch: true, softness: 3, mix: 0.5 });
+  Object.assign(json.animations.run.slots.body, { rgb: [{ color: 'aabbcc' }], rgb2: [{ light: 'aabbcc', dark: '112233' }], alpha: [{ value: 0.5 }] });
+  const back = readSkeletonBinary(writeSkeletonBinary(json));
+  assert.equal(back.constraints.find(c => c.type === 'ik').scaleY, 'volume');
+  assert.equal(back.constraints.find(c => c.type === 'ik').softness, 3);
+  assert.equal(back.animations.run.slots.body.rgb2[0].dark, '112233');
+  assert.ok(Math.abs(back.animations.run.slots.body.alpha[0].value - 0.5) < 0.003);
+});
+
+test('binary rejects 4.3 mappings that the runtime cannot evaluate', () => {
+  const folders = structuredClone(FIXTURE);
+  folders.animations.run._drawOrderFolders = [{ slots: [0], keys: [] }];
+  assert.throws(() => writeSkeletonBinary(folders), /Draw order folder timelines/);
+  const mappings = structuredClone(FIXTURE);
+  mappings.skins[0].attachments.leg.leg._timelineSlots = [0];
+  assert.throws(() => writeSkeletonBinary(mappings), /Mesh timeline slot mappings/);
+});
+
+test('legacy slider property encoding is preserved and ambiguity is reported', () => {
+  const bytes = Buffer.from('AAAAAAAAAAAGNC4zLjAAAAAAAAAAAAAAAAAAAAAAQsgAAAFB8AAAAAAAAgVyb290AAAAAAAAAAAAAAAAP4AAAD+AAAAAAAAAAAAAAAAAAAAAAJubm/8AP4AAAAAAAAABBWRpYWwAAAAAAAAAAAAAAAAAP4AAAD+AAAAAAAAAAAAAAAAAAAAAAJubm/8AP4AAAAAAAAABAAECcwTaPwAAAAEBAAAAAAAAAAA/AAAAAAAAAQVpZGxlAQABAQEAAgAAAAAAAAAAAD+AAABCNAAAAAAAAAAAAAAAAP////8A', 'base64');
+  const json = readSkeletonBinary(bytes);
+  assert.equal(json.constraints[0].property, 'x');
+  assert.ok(readSkeletonJson(json).warnings.some(w => w.includes('ambiguous property encoding')));
+});
+
+test('4.0 binary reads legacy constraints, attachments and animation keys', async () => {
+  const bytes = [];
+  const byte = v => bytes.push(v & 255);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0)); string('4.0.31');
+  for (const v of [0, 0, 100, 100]) float(v);
+  byte(1); float(30); byte(0); byte(0);
+  byte(1); string('image'); byte(1); string('root');
+  for (const v of [0, 0, 0, 1, 1, 0, 0, 0]) float(v);
+  byte(0); byte(0); bytes.push(155,155,155,255);
+  byte(1); string('slot'); byte(0); bytes.push(...Array(8).fill(255)); byte(1); byte(0);
+  byte(1); string('ik'); byte(0); byte(0); byte(1); byte(0); byte(0);
+  float(0.5); float(2); byte(255); byte(1); byte(1); byte(0);
+  byte(0); byte(0); byte(1); byte(0); byte(1); byte(1);
+  byte(0); byte(0); byte(0);
+  for (const v of [0,0,0,1,1,10,20]) float(v);
+  bytes.push(255,255,255,255); byte(0); byte(0);
+  byte(1); string('move'); byte(2); byte(0);
+  byte(1); byte(0); byte(1); byte(0); byte(2); byte(0);
+  float(0); float(0); float(1); float(90); byte(0);
+  byte(1); byte(0); byte(2); byte(0);
+  float(0); float(1); float(0); byte(1); byte(0); byte(0);
+  float(1); float(0.5); float(2); byte(1); byte(255); byte(1); byte(0);
+  byte(0); byte(0); byte(0); byte(0); byte(0);
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.equal(result.ik[0].softness, 2);
+  assert.equal(result.skins[0].attachments.slot.image.height, 20);
+  assert.deepEqual(result.animations.move.bones.root.rotate, [{}, { time: 1, value: 90 }]);
+  assert.equal(result.animations.move.ik.ik[0].curve, 'stepped');
+  const doc = readSkeletonJson(result).skeleton;
+  const { Pose } = await import('../src/core/pose.js');
+  const pose = new Pose(doc); pose.apply(doc, doc.animations[0], 0.5, 1); pose.updateWorld(doc);
+  assert.ok(pose.world.every(w => [w.a,w.b,w.c,w.d,w.tx,w.ty].every(Number.isFinite)));
+  const unsupported = Uint8Array.from(bytes); unsupported[11] = '5'.charCodeAt(0);
+  assert.throws(() => readSkeletonBinary(unsupported), /Binary format 4\.5/);
+});
+
+test('4.1 binary reads legacy attachments with image sequences', async () => {
+  const bytes = [];
+  const byte = v => bytes.push(v & 255);
+  const float = v => { const b = Buffer.alloc(4); b.writeFloatBE(v); bytes.push(...b); };
+  const string = s => { const b = Buffer.from(s); byte(b.length + 1); bytes.push(...b); };
+  bytes.push(...Array(8).fill(0)); string('4.1.17');
+  for (const v of [0,0,100,100]) float(v);
+  byte(1); float(30); byte(0); byte(0); byte(1); string('image'); byte(1); string('root');
+  for (const v of [0,0,0,1,1,0,0,0]) float(v);
+  byte(0); byte(0); bytes.push(155,155,155,255);
+  byte(1); string('slot'); byte(0); bytes.push(...Array(8).fill(255)); byte(1); byte(0);
+  byte(0); byte(0); byte(0); byte(1); byte(0); byte(1); byte(1);
+  byte(0); byte(0); byte(0);
+  for (const v of [0,0,0,1,1,10,20]) float(v);
+  bytes.push(255,255,255,255); byte(1); byte(3); byte(1); byte(2); byte(0);
+  byte(0); byte(0); byte(1); string('move'); byte(1); byte(0);
+  byte(1); byte(0); byte(1); byte(0); byte(2); byte(0);
+  float(0); float(0); float(1); float(90); byte(0);
+  byte(0); byte(0); byte(0); byte(0); byte(0); byte(0);
+  const result = readSkeletonBinary(Uint8Array.from(bytes));
+  assert.deepEqual(result.skins[0].attachments.slot.image.sequence, { count: 3, digits: 2 });
+  const doc = readSkeletonJson(result).skeleton;
+  const { Pose } = await import('../src/core/pose.js');
+  const pose = new Pose(doc); pose.apply(doc, doc.animations[0], 0.5, 1); pose.updateWorld(doc);
+  assert.ok(pose.world.every(w => [w.a,w.b,w.c,w.d,w.tx,w.ty].every(Number.isFinite)));
 });

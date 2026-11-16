@@ -398,6 +398,11 @@ export class Pose {
   solveIk(sk, c, state) {
     const mix = state.mix;
     if (mix <= 0 || !c.bones.length) return;
+    const scaleYMode = c.extra?.scaleY ?? (c.uniform ? 'uniform' : 'none');
+    const scaleY = (bone, factor) => {
+      if (scaleYMode === 'uniform') this.applied[bone].scale_y *= factor;
+      else if (scaleYMode === 'volume') this.applied[bone].scale_y /= Math.max(factor, 1e-8);
+    };
     const target = this.world[c.target].apply([0, 0]);
     const parentSign = (b) => {
       const p = sk.bones[b].parent;
@@ -417,7 +422,7 @@ export class Pose {
       if (boneLen > 1e-4 && ((state.compress && dist < boneLen) || (state.stretch && dist > boneLen))) {
         const s = (dist / boneLen - 1) * mix + 1;
         this.applied[b].scale_x *= s;
-        if (c.uniform) this.applied[b].scale_y *= s;
+        scaleY(b, s);
       }
       this.updateBranch(sk, b);
       return;
@@ -443,7 +448,7 @@ export class Pose {
       this.finishTwoBone(sk, p, ch, target, mix, state, parentSign);
       const s = (d / (a + bLen) - 1) * mix + 1;
       this.applied[p].scale_x *= s;
-      if (c.uniform) this.applied[p].scale_y *= s;
+      scaleY(p, s);
       this.updateBranch(sk, p);
       return;
     }

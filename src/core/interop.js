@@ -97,7 +97,7 @@ export function readSkeletonJson(obj, name = 'skeleton') {
   if (!isSkeletonJson(obj)) throw new Error('not a skeleton JSON file');
   const version = versionOf(obj);
   const v4 = version.major >= 4;
-  const warnings = [];
+  const warnings = [...(obj._binaryWarnings ?? [])];
   const sk = new Skeleton();
   sk.name = name;
   const { [VERSION_FIELD]: version_, ...header } = obj.skeleton;
@@ -623,7 +623,7 @@ function setupBounds(sk) {
   for (const i of pose.drawOrder) {
     const att = pose.slotAttachment(sk, i);
     if (att?.type === 'clipping') {
-      clipper = new Clipper(pose.worldVertices(sk, i, att));
+      clipper = new Clipper(pose.worldVertices(sk, i, att), { inverse: !!att.extra?.inverse });
       clipEnd = att.end === i ? null : (att.end ?? null); // ending at its own slot means: to the end
     } else if (quads.has(i)) {
       const q = quads.get(i);
@@ -980,6 +980,50 @@ function writeAnimation(anim, sk, { v4, boneName, slotName, warnings }) {
       });
     }
   }
+  preserveAnimationDuration(out, anim, warnings);
   return out;
+}
+
+/** Preserve a trailing hold using an existing timeline, without introducing a new animated property. */
+function preserveAnimationDuration(out, anim, warnings) {
+  let lastTime = 0;
+  const scan = value => {
+    if (Array.isArray(value)) {
+      for (const key of value) if (key && typeof key === 'object' && Number.isFinite(key.time)) lastTime = Math.max(lastTime, key.time);
+      for (const child of value) scan(child);
+    } else if (value && typeof value === 'object') for (const child of Object.values(value)) scan(child);
+  };
+  scan(out);
+  const end = round(anim.duration);
+  if (!(end > lastTime + 1e-6)) return;
+  const candidates = [];
+  for (const group of [out.bones, out.slots]) for (const timelines of Object.values(group ?? {})) {
+    for (const [kind, keys] of Object.entries(timelines)) {
+      if (['rotate', 'translate', 'translatex', 'translatey', 'scale', 'scalex', 'scaley', 'shear', 'shearx', 'sheary', 'inherit', 'attachment', 'color', 'rgba', 'rgb', 'alpha', 'twoColor', 'rgba2', 'rgb2'].includes(kind) && Array.isArray(keys) && keys.length) candidates.push({ kind, keys });
+    }
+  }
+  for (const keys of Object.values(out.ik ?? {})) if (Array.isArray(keys) && keys.length) candidates.push({ kind: 'ik', keys });
+  for (const slots of Object.values(out.deform ?? {})) for (const atts of Object.values(slots)) for (const keys of Object.values(atts)) {
+    if (Array.isArray(keys) && keys.length) candidates.push({ kind: 'deform', keys });
+  }
+  for (const slots of Object.values(out.attachments ?? {})) for (const atts of Object.values(slots)) for (const timelines of Object.values(atts)) {
+    if (Array.isArray(timelines.deform) && timelines.deform.length) candidates.push({ kind: 'deform', keys: timelines.deform });
+  }
+  const drawOrder = out.drawOrder ?? out.draworder;
+  if (Array.isArray(drawOrder) && drawOrder.length) candidates.push({ kind: 'drawOrder', keys: drawOrder });
+  const selected = candidates[0];
+  if (!selected) {
+    warnings.push(`'${anim.name}': trailing animation duration cannot be represented without a suitable timeline`);
+    return;
+  }
+  const last = selected.keys[selected.keys.length - 1];
+  const endKey = clone(last);
+  endKey.time = end;
+  for (const field of ['curve', 'c2', 'c3', 'c4']) delete endKey[field];
+  if (!['attachment', 'inherit', 'drawOrder'].includes(selected.kind)) {
+    last.curve = 'stepped';
+    for (const field of ['c2', 'c3', 'c4']) delete last[field];
+  }
+  selected.keys.push(endKey);
 }
 

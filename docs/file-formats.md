@@ -23,8 +23,21 @@ pose. Images come from the `.atlas` or from loose files in the skeleton's `image
 pages can be PNG, WebP or KTX2: the editor and the MCP tools decode all three (KTX2 through the
 Basis Universal transcoder), and honour the atlas `pma` line and the KTX2 premultiplied flag.
 
-Rigby2D reads and writes these formats losslessly, for interoperability with your own exported files.
-Support was implemented clean-room from public documentation and observation of exported data.
+The editor reads PNG, JPEG, WebP and Basis Universal KTX2 atlas pages. Node-based image extraction
+and sprite-sheet exports support PNG and KTX2 pages, and WebP pages when FFmpeg is on PATH. The editor can export KTX2 pages with PNG fallbacks; the CLI supports `--texture ktx2` with ETC1S or UASTC, mipmaps, and optional PNG fallback. The KTX2 encoder and transcoder support Basis Universal textures. Some
+binary attachment and animation options remain unsupported; these report an error instead of being
+silently omitted. Exported data should be checked in its target runtime.
+
+To check a collection with the editor's loader and WebGL renderer, install the development
+dependencies and Playwright Chromium, then run:
+
+```sh
+node scripts/compatibility.mjs <input-directory> <report.json>
+```
+
+The report must be outside the input directory and must not already exist. The runner samples poses
+and renders frames, but marks results requiring visual and motion review as unverified; it returns a
+nonzero exit code when any entry is not verified.
 
 ## Scene manifest (`.scene.json`)
 

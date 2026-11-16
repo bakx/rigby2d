@@ -178,7 +178,7 @@ export const COMMANDS = {
   validate: {
     summary: 'Check a project for problems (exit code 1 when it is invalid)',
     usage: 'rigby validate <project>',
-    details: 'Checks the structure, images missing from the work file or atlas, animations without keys, the skeleton JSON 4.3 round trip and binary .skel export.',
+    details: 'Checks structure, required image resources and atlas pages, animations without keys, the skeleton JSON 4.3 round trip and binary .skel export.',
     positionals: ['project'],
     run: ({ project }, { tools }) => callTool(tools, 'validate_project', { path: project }),
     text: validateText,
@@ -210,10 +210,17 @@ export const COMMANDS = {
     details:
       'json, skel   --out is the skeleton file; <name>.atlas and <name>.png are packed next to it.\n' +
       'defold       --out is a folder in a Defold project: .rigbyskel, .atlas, images/, .rigbymodel and .go.\n' +
-      'spritesheet  --out is a folder: frames rendered into sheets (--sheet json|defold|frames).',
+      'spritesheet  --out is a folder: frames rendered into sheets (--sheet json|defold|frames).\n' +
+      'Exports fail before writing files when required artwork is missing.',
     positionals: ['project'],
     outputOf: (a) => (/\.(json|skel)$/i.test(a.out ?? '') ? a.out : undefined),
     options: {
+      texture: { type: 'string', choices: ['png', 'ktx2'], help: 'Atlas page format (default png).' },
+      codec: { type: 'string', choices: ['etc1s', 'uastc'], help: 'KTX2 codec (default etc1s).' },
+      quality: { type: 'number', help: 'KTX2 quality from 1 to 255.' },
+      mipmaps: { type: 'boolean', help: 'Generate KTX2 mipmaps.' },
+      zstd: { type: 'boolean', help: 'Supercompress UASTC KTX2 (default on).' },
+      fallback: { type: 'boolean', help: 'Write a PNG fallback alongside KTX2.' },
       format: { type: 'string', short: 'F', choices: ['json', 'skel', 'defold', 'spritesheet'], help: 'What to export (default: from --out: .json or .skel).' },
       out: { type: 'string', short: 'o', help: 'Output file (json, skel) or folder (defold, spritesheet).' },
       version: { type: 'string', short: 'V', choices: ['3.8', '4.2', '4.3'], help: 'json: skeleton JSON version (default 4.3).' },
@@ -240,8 +247,9 @@ export const COMMANDS = {
       if (!format) throw new UsageError('give --format json|skel|defold|spritesheet');
       if (format === 'json' || format === 'skel') {
         if (ext !== `.${format}`) throw new UsageError(`--out for ${format} is a .${format} file`);
-        return exportWithAtlas(path.resolve(a.project), path.resolve(a.out), { version: a.version ?? '4.3', force: a.force });
+        return exportWithAtlas(path.resolve(a.project), path.resolve(a.out), { version: a.version ?? '4.3', force: a.force, texture: a.texture, codec: a.codec, quality: a.quality, mipmaps: a.mipmaps, zstd: a.zstd, fallback: a.fallback });
       }
+      if ([a.texture, a.codec, a.quality, a.mipmaps, a.zstd, a.fallback].some(value => value !== undefined)) throw new UsageError('KTX2 texture options apply only to json and skel exports');
       await fsp.mkdir(path.resolve(a.out), { recursive: true });
       if (format === 'defold') {
         if (a.animation?.length > 1) throw new UsageError('defold: --animation is the one animation the model starts with');

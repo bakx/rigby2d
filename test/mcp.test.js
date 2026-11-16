@@ -14,6 +14,7 @@ import { ErrorCode, PROTOCOL_VERSIONS, ToolError, checkArguments, createServer }
 import { createEditTools } from '../src/mcp/edits.js';
 import { Workspace, createTools } from '../src/mcp/tools.js';
 import { unzip } from '../src/editor/zip.js';
+import { pack } from '../src/core/pack.js';
 
 const REPO = path.resolve(fileURLToPath(import.meta.url), '../..');
 const RIGBY = 'branding/rigbytron/rigbytron.rigby';
@@ -137,10 +138,13 @@ test('mcp tools: validate finds no problems in the shipped files and reports mis
     assert.deepEqual(report.warnings, [], p);
     assert.deepEqual(report.checks, { structure: 'ok', images: 'ok', pages: p === RIGBY ? 'not checked' : 'ok', jsonRoundTrip: 'ok', binaryExport: 'ok' }, p);
   }
-  // Without its atlas the images cannot be checked; with an atlas missing a region they are missing.
+  // Missing resources must fail validation, including a missing atlas page.
   const lone = path.join(tmp, 'lone.json');
   await fs.copyFile(path.join(REPO, JSON_FILE), lone);
-  assert.equal((await tools.validate_project({ path: lone })).checks.images, 'not checked');
+  const noAtlas = await tools.validate_project({ path: lone });
+  assert.equal(noAtlas.valid, false);
+  assert.equal(noAtlas.checks.images, 'missing');
+  assert.match(noAtlas.errors[0], /No \.atlas or images folder/);
   const atlas = await fs.readFile(path.join(REPO, 'branding/rigbytron/export/rigbytron.atlas'), 'utf8');
   await fs.writeFile(path.join(tmp, 'lone.atlas'), atlas.replace(/^hand_e$/m, 'hand_x'));
   const report = await tools.validate_project({ path: lone });
@@ -235,12 +239,16 @@ test('mcp edits: save to an output file and edit skeleton exports in their forma
 
   await tools.set_bone_key({ path: copy, animation: 'idle', bone: 'head', channel: 'rotate', time: 1, value: 5, curve: 'stepped' });
   assert.equal(JSON.parse(await fs.readFile(copy, 'utf8')).skeleton.spine.startsWith('4.3'), true);
-  assert.equal((await tools.validate_project({ path: copy })).valid, true);
+  const jsonValidation = await tools.validate_project({ path: copy });
+  assert.equal(jsonValidation.checks.structure, 'ok');
+  assert.equal(jsonValidation.valid, false); // Skeleton-only copy has no artwork.
 
   await tools.set_event_key({ path: skel, animation: 'release', event: 'slash', time: 0.42, int: 3 });
   const release = await tools.describe_animation({ path: skel, animation: 'release' });
   assert.deepEqual(release.events, [{ time: 0.42, name: 'slash' }], 'an event key at the same time is replaced');
-  assert.equal((await tools.validate_project({ path: skel })).valid, true);
+  const binaryValidation = await tools.validate_project({ path: skel });
+  assert.equal(binaryValidation.checks.structure, 'ok');
+  assert.equal(binaryValidation.valid, false);
 });
 
 test('mcp server: answers over stdio', async () => {
@@ -273,4 +281,32 @@ test('mcp server: answers over stdio', async () => {
   assert.equal(byId.get(3).result.structuredContent.counts.bones, 11);
   assert.equal(byId.get(null).error.code, ErrorCode.PARSE_ERROR);
   assert.equal(lines.length, 4);
+});
+
+
+test('mcp conversion packs atlas pages and refuses missing artwork before writing', async () => {
+  const { tmp, tools } = await toolbox();
+  const out = path.join(tmp, 'packed.json');
+  const result = await tools.convert_project({ input: RIGBY, output: out, atlas: true, texture_format: 'ktx2', codec: 'uastc', fallback: 'png' });
+  assert.ok(result.atlas.pages.length > 0);
+  assert.ok((await fs.readFile(result.atlas.pages[0].file)).length > 80);
+  assert.match(await fs.readFile(path.join(tmp, 'packed.atlas'), 'utf8'), /packed.*\.ktx2/);
+  assert.ok((await fs.stat(path.join(tmp, 'packed.png'))).size > 0);
+  assert.equal((await tools.validate_project({ path: out })).valid, true);
+  await assert.rejects(tools.convert_project({ input: RIGBY, output: out, atlas: true }), /already exists/);
+  const incomplete = path.join(tmp, 'incomplete.json');
+  await fs.writeFile(incomplete, JSON.stringify({ skeleton: { spine: '4.2.0' }, bones: [{ name: 'root' }], slots: [{ name: 's', bone: 'root', attachment: 'art' }], skins: [{ name: 'default', attachments: { s: { art: { width: 8, height: 8 } } } }] }));
+  const target = path.join(tmp, 'incomplete-out.json');
+  await assert.rejects(tools.convert_project({ input: incomplete, output: target, atlas: true }), /missing/);
+  await assert.rejects(fs.access(target));
+  await assert.rejects(tools.convert_project({ input: RIGBY, output: target, atlas: true, max_size: 999999 }), /Invalid atlas/);
+});
+
+
+test('atlas packing splits pages and enforces power-of-two limits', () => {
+  const items = Array.from({ length: 3 }, (_, i) => ({ name: `region${i}`, width: 40, height: 40 }));
+  const pages = pack(items, { maxSize: 64, padding: 2, powerOfTwo: true });
+  assert.equal(pages.length, 3);
+  assert.ok(pages.every(p => p.width === 64 && p.height === 64));
+  assert.throws(() => pack(items, { maxSize: 100, powerOfTwo: true }), /power-of-two/);
 });

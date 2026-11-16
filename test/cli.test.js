@@ -138,9 +138,11 @@ test('cli: inspect, rig, animation, pose and validate', async () => {
   const valid = await rigby('validate', RIGBY);
   assert.equal(valid.code, 0);
   assert.match(valid.out, /^valid: /);
-  // A skeleton without its images is checked, but not failed for that.
+  // A skeleton without its images cannot pass render-ready validation.
   const turn = await rigby('validate', TURN, '--json');
   assert.equal(turn.json.checks.structure, 'ok');
+  assert.equal(turn.json.valid, false);
+  assert.equal(turn.code, 1);
 });
 
 test('cli: validate exits with 1 for an invalid project', async () => {
@@ -408,4 +410,27 @@ test('cli render: MP4 goes to NVENC when there is such an ffmpeg, everything els
   assert.equal((await chooseEngine(undefined, 'webm', undefined, yes)).name, 'app');
   assert.equal((await chooseEngine('app', 'mp4', undefined, yes)).name, 'app');
   assert.equal((await chooseEngine('chromium', 'png', undefined, no)).name, 'chromium');
+});
+
+test('cli export refuses incomplete artwork without writing or replacing files', async () => {
+  const dir = await tmpDir();
+  const target = path.join(dir, 'model.json');
+  await fs.writeFile(target, 'keep');
+  const packed = await rigby('export', TURN, '--out', target, '--force');
+  assert.equal(packed.code, 1);
+  assert.match(packed.err, /required image\(s\) are missing/);
+  assert.equal(await fs.readFile(target, 'utf8'), 'keep');
+  assert.equal(await exists(path.join(dir, 'model.atlas')), false);
+  assert.equal(await exists(path.join(dir, 'model.png')), false);
+  const binary = await rigby('export', TURN, '--out', path.join(dir, 'model.skel'));
+  assert.equal(binary.code, 1);
+  assert.equal(await exists(path.join(dir, 'model.skel')), false);
+  const defold = await rigby('export', TURN, '-F', 'defold', '--out', path.join(dir, 'defold'), '--folder', '/assets/model');
+  assert.equal(defold.code, 1);
+  assert.match(defold.err, /required image\(s\) are missing/);
+  assert.deepEqual(await fs.readdir(path.join(dir, 'defold')), []);
+  const sheet = await rigby('export', TURN, '-F', 'spritesheet', '--out', path.join(dir, 'sheet'));
+  assert.equal(sheet.code, 1);
+  assert.match(sheet.err, /required image\(s\) are missing/);
+  assert.deepEqual(await fs.readdir(path.join(dir, 'sheet')), []);
 });

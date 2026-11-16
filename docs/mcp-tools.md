@@ -110,6 +110,8 @@ Evaluate the skeleton with the Rigby2D runtime: the setup pose, or an animation 
 
 Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas pages (PNG, WebP or KTX2) that are missing or not the size the atlas says, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. *Read only.*
 
+Validation fails when required images or atlas pages are missing or cannot be decoded. JPEG and WebP decoding in the Node tools requires FFmpeg on PATH.
+
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
@@ -156,6 +158,9 @@ Write a Rigby2D model for Defold from a character (.rigby work file, or .skel / 
 ### `export_sprite_sheet`
 
 Render animations frame by frame into a sprite sheet for engines that play frames: 'json' writes <name>.png and <name>.json (a JSON hash as TexturePacker writes it, read by Phaser, PixiJS and others, with Aseprite frameTags, durations and a pivot at the skeleton's origin); 'defold' writes <name>/<animation>_<n>.png frames and <name>.atlas; 'frames' writes the frames only. Physics settles into loops first. Reads .rigby, or .json / .skel with its atlas. Refuses to replace files unless overwrite is true.
+
+WebP atlas pages require FFmpeg on PATH when extracting images or rendering sprite sheets with the Node tools.
+Defold and sprite-sheet exports fail when required artwork is missing.
 
 | Parameter | Type | Description |
 | --- | --- | --- |

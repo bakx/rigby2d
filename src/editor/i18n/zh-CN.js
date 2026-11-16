@@ -140,6 +140,8 @@ export default {
   "Below the tree, the <b>inspector</b> shows the details of what you selected: here, the head bone's name, parent, rotation, position and scale.": "层级树下方的<b>检查器</b>显示所选内容的详细信息：这里是 head 骨骼的名称、父级、旋转、位置和缩放。",
   "Bend": "弯曲方向",
   "Big sheets, split": "大图集自动拆分",
+  "JSON + KTX2 atlas…": "JSON + KTX2 图集…",
+  "Binary .skel + KTX2 atlas…": "二进制 .skel + KTX2 图集…",
   "Binary .skel + atlas (4.3)…": "二进制 .skel + 图集（4.3）…",
   "Binary export failed": "二进制导出失败",
   "Binary skeleton": "二进制骨骼",

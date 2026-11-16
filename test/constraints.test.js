@@ -190,6 +190,17 @@ test('slider constraint drives an animation from a bone rotation', () => {
   assert.ok(close(rot(new Pose(sk), sk, 'arm'), 100));
 });
 
+test('slider constraint applies the source-property offset before scaling', () => {
+  const { skeleton: sk } = readSkeletonJson({
+    skeleton: { [V]: '4.3.0' },
+    bones: [{ name: 'root' }, { name: 'dial', parent: 'root', rotation: 90 }, { name: 'arm', parent: 'root' }],
+    constraints: [{ type: 'slider', name: 's', animation: 'raise', bone: 'dial', property: 'rotate', propertyOffset: 45, scale: 1 / 90, local: true }],
+    skins: [{ name: 'default', attachments: {} }],
+    animations: { raise: { bones: { arm: { rotate: [{ value: 0 }, { time: 1, value: 100 }] } } } },
+  });
+  assert.ok(close(rot(new Pose(sk), sk, 'arm'), 50));
+});
+
 test('a sequence is read from the name of one of its frames', async () => {
   const { inferSequence, sequenceFrameName } = await import('../src/core/sequence.js');
   const images = new Set(['guy-01', 'guy-02', 'guy-03', 'fire0', 'fire1', 'fire2', 'wing7']);
@@ -215,5 +226,44 @@ test('a stretching two-bone IK reaches a target out of reach, bent or straight',
     const pose = new Pose(sk);
     const [x, y] = pose.world[2].apply([100, 0]);
     assert.ok(close(x, tx, 1e-6) && close(y, ty, 1e-6), `tip ${x}, ${y} for target ${tx}, ${ty}`);
+  }
+});
+
+test('4.3 binary slider property offsets affect the evaluated pose', async () => {
+  const { writeSkeletonBinary, readSkeletonBinary } = await import('../src/core/binary.js');
+  const json = {
+    skeleton: { [V]: '4.3.0' },
+    bones: [{ name: 'root' }, { name: 'dial', parent: 'root', rotation: 90 }, { name: 'arm', parent: 'root' }],
+    constraints: [{ type: 'slider', name: 's', animation: 'raise', bone: 'dial', property: 'rotate', propertyOffset: 45, scale: 1 / 90, local: true }],
+    skins: [{ name: 'default', attachments: {} }],
+    animations: { raise: { bones: { arm: { rotate: [{ value: 0 }, { time: 1, value: 100 }] } } } },
+  };
+  const sk = readSkeletonJson(readSkeletonBinary(writeSkeletonBinary(json))).skeleton;
+  assert.ok(close(rot(new Pose(sk), sk, 'arm'), 50));
+});
+
+test('4.3 binary IK volume mode preserves area while stretching', async () => {
+  const { writeSkeletonBinary, readSkeletonBinary } = await import('../src/core/binary.js');
+  const json = {
+    skeleton: { [V]: '4.3.0' },
+    bones: [{ name: 'root' }, { name: 'arm', parent: 'root', length: 100 }, { name: 'target', parent: 'root', x: 200 }],
+    constraints: [{ type: 'ik', name: 'reach', bones: ['arm'], target: 'target', stretch: true, scaleY: 'volume' }],
+    skins: [{ name: 'default', attachments: {} }],
+  };
+  const sk = readSkeletonJson(readSkeletonBinary(writeSkeletonBinary(json))).skeleton;
+  const pose = new Pose(sk);
+  assert.ok(close(pose.applied[1].scale_x, 2));
+  assert.ok(close(pose.applied[1].scale_y, 0.5));
+});
+
+test('physics scale modes apply uniform and area-preserving Y scale', async () => {
+  const { solvePhysics } = await import('../src/core/constraints.js');
+  const { Affine } = await import('../src/core/math.js');
+  for (const [mode, expectedY] of [['uniform', 2], ['volume', 0.5], ['none', 1]]) {
+    const sk = { bones: [{ length: 100 }] }, pose = { world: [new Affine()], placement: null };
+    const c = { bone: 0, weights: { x: 0, y: 0, rotate: 0, shearX: 0, scaleX: 1, scaleY: mode } };
+    const state = { mix: 1 }, sim = { ready: true, o: [0,0], t: [100,0] };
+    const matrix = solvePhysics(sk, pose, c, state, sim, 0).world.get(0);
+    assert.ok(close(matrix.a, 2)); assert.ok(close(matrix.d, expectedY));
   }
 });

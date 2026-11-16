@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { atlasFilter, writeAtlas } from '../core/atlas.js';
+import { encodeKtx2 } from '../core/ktx2.js';
 import { writeSkeletonBinary } from '../core/binary.js';
 import { writeSkeletonJson } from '../core/interop.js';
 import { usedImages } from '../editor/io.js';
@@ -83,7 +84,8 @@ export async function psdToWorkfile(input, output, { force = false } = {}) {
  * every image the skeleton uses packed into `<name>.atlas` and `<name>.png` next to it.
  * Returns { output, atlas, page, size, regions, missingImages, warnings }.
  */
-export async function exportWithAtlas(input, output, { version = '4.3', force = false } = {}) {
+export async function exportWithAtlas(input, output, { version = '4.3', force = false, texture = 'png', codec = 'etc1s', quality = 128, mipmaps = false, zstd = true, fallback = false } = {}) {
+  if (!['png', 'ktx2'].includes(texture)) throw new ToolError('Texture must be png or ktx2.');
   const ext = path.extname(output).toLowerCase();
   if (ext !== '.json' && ext !== '.skel') throw new ToolError('The output must end in .json or .skel.');
   if (ext === '.skel' && version !== '4.3') throw new ToolError('Binary .skel files are written as format 4.3.');
@@ -92,13 +94,15 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
   const base = output.slice(0, -ext.length);
   const atlasPath = `${base}.atlas`;
   const pngPath = `${base}.png`;
+  const pagePath = `${base}.${texture}`;
   if (path.resolve(output) === path.resolve(p.file)) throw new ToolError('The output must be a different file than the input.');
-  await checkTargets([output, atlasPath, pngPath], force);
+  await checkTargets([output, atlasPath, pagePath, ...(texture === 'ktx2' && fallback ? [pngPath] : [])], force);
 
   const used = usedImages(p.doc);
   const found = await projectImages(p, new Set(used));
   const items = used.filter((n) => found.has(n)).map((name) => ({ name, ...rgbaOf(found.get(name)) }));
   const missing = used.filter((n) => !found.has(n));
+  if (missing.length) throw new ToolError(`Cannot export: ${missing.length} required image(s) are missing: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', …' : ''}.`);
   let written;
   try {
     written = ext === '.skel' ? writeSkeletonJson(p.doc, { version: '4.3', binary: true }) : writeSkeletonJson(p.doc, { version });

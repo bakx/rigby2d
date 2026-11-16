@@ -295,3 +295,48 @@ a
   const again = parseAtlas(writeAtlas(pages)).pages;
   assert.deepEqual(again.map((p) => p.regions.map((r) => [r.name, r.x, r.y, r.width, r.height, r.rotate, r.index])), pages.map((p) => p.regions.map((r) => [r.name, r.x, r.y, r.width, r.height, r.rotate, r.index])));
 });
+
+test('skeleton JSON preserves trailing animation holds without changing poses', () => {
+  const source = readSkeletonJson(structuredClone(FIXTURE_38)).skeleton;
+  const anim = source.animations[0];
+  anim.duration = 2;
+  const before = JSON.stringify(source.toObject());
+  for (const version of ['3.8', '4.2', '4.3']) {
+    const written = writeSkeletonJson(source, { version });
+    const restored = readSkeletonJson(written.json).skeleton;
+    assert.equal(restored.animations[0].duration, 2);
+    for (const t of [0.25, 0.75, 1.25, 1.99]) {
+      const a = new Pose(source), b = new Pose(restored);
+      a.apply(source, anim, t, 1); a.updateWorld(source);
+      b.apply(restored, restored.animations[0], t, 1); b.updateWorld(restored);
+      for (let i = 0; i < a.world.length; i++) for (const key of ['a', 'b', 'c', 'd', 'tx', 'ty']) {
+        assert.ok(close(a.world[i][key], b.world[i][key], 0.01), `${version}, ${t}, ${i}, ${key}`);
+      }
+    }
+  }
+  assert.equal(JSON.stringify(source.toObject()), before);
+});
+
+test('skeleton JSON reports trailing holds when no safe timeline exists', () => {
+  const source = readSkeletonJson(structuredClone(FIXTURE_38)).skeleton;
+  const anim = source.animations[0];
+  anim.bones = []; anim.slots = []; anim.deform = []; anim.ik = []; anim.drawOrder = []; anim.events = []; anim.extra = {};
+  anim.duration = 2;
+  const { warnings } = writeSkeletonJson(source, { version: '4.2' });
+  assert.ok(warnings.some(w => w.includes('trailing animation duration')));
+});
+
+test('trailing holds use existing attachment and deform timelines', () => {
+  for (const kind of ['attachment', 'deform']) {
+    const sk = readSkeletonJson(structuredClone(FIXTURE_38)).skeleton;
+    const a = sk.animations[0];
+    a.duration = 2; a.bones = []; a.ik = []; a.drawOrder = []; a.events = []; a.extra = {};
+    if (kind === 'attachment') { a.deform = []; a.slots = a.slots.filter(t => t.attachment.length); for (const t of a.slots) { t.color = []; t.rgba2 = []; } }
+    else a.slots = [];
+    for (const version of ['3.8', '4.2', '4.3']) {
+      const out = writeSkeletonJson(sk, { version });
+      assert.ok(!out.warnings.some(w => w.includes('trailing animation duration')));
+      assert.equal(readSkeletonJson(out.json).skeleton.animations[0].duration, 2);
+    }
+  }
+});

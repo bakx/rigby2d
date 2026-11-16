@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Builds the Rigby2D MCP Bundle (.mcpb): a one-file, double-click install of the MCP server for
 // Claude Desktop, which brings its own Node.js. The server's files are found by following its
-// imports from src/mcp/server.js, so the bundle holds exactly what the server uses, plus Pyodide
-// (Python scripts) and ag-psd (PSD files). Output: dist-mcpb/Rigby2D-AI-<version>.mcpb and
+// imports from src/mcp/server.js, so the bundle holds the server and its runtime dependencies.
+// Output: dist-mcpb/Rigby2D-AI-<version>.mcpb and
 // dist-mcpb/Rigby2D-AI.mcpb (the same file under a fixed name, for "latest" download links).
 //
 //   node mcpb/build.mjs
