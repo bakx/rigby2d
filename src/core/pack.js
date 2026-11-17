@@ -25,6 +25,19 @@ export function usedImages(doc) {
   return [...names].sort();
 }
 
+/** Images used by meshes must retain their full UV rectangle when packing. */
+export function meshImages(doc) {
+  const names = new Set();
+  const visit = a => {
+    if (a.type !== 'mesh' && a.type !== 'linkedmesh') return;
+    if (a.sequence) for (let i = 0; i < (a.sequence.count ?? 1); i++) names.add(sequenceFrameName(a, i));
+    else names.add(a.image);
+  };
+  for (const slot of doc.slots) slot.attachments.forEach(visit);
+  for (const skin of doc.skins) for (const slot of skin.slots) slot.attachments.forEach(visit);
+  return names;
+}
+
 /**
  * Shelf-packs `items` ({ name, width, height }) into pages of at most `maxSize` pixels a side,
  * `padding` pixels apart; a new page starts when one overflows. Returns [{ width, height, regions }]
@@ -70,17 +83,19 @@ export function pack(items, { padding = 2, maxSize = 8192, powerOfTwo = true } =
  * writes as the attachment `path`. Returns { pages: [{ name, width, height, data, regions }], atlas (the
  * .atlas text), missing (image names) }. Pages are `<name>.<ext>`, `<name>_2.<ext>`, … `scale` resamples
  * the images and writes the atlas `scale` line, so the skeleton itself is unchanged; `trim` crops each
- * region to its alpha bounds and writes offsets, so placement does not change; `pma` premultiplies.
+ * region to its alpha bounds and writes offsets; mesh images remain untrimmed so their UVs stay inside
+ * the region. `pma` premultiplies.
  */
 export function packAtlas(doc, pixels, { name, filter = ['Linear', 'Linear'], padding = 2, maxSize = 4096, powerOfTwo = false, pma = false, trim = false, scale = 1, ext = 'png' } = {}) {
   const missing = [], items = [];
+  const untrimmed = trim ? meshImages(doc) : null;
   for (const image of usedImages(doc)) {
     let img = pixels(image);
     if (!img) { missing.push(image); continue; }
     if (scale !== 1) img = resample(img, Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
     const original = { width: img.width, height: img.height };
     let offset = [0, 0];
-    if (trim) {
+    if (trim && !untrimmed.has(image)) {
       const b = alphaBounds(img);
       // Atlas offsets count from the bottom left. An empty image keeps one transparent pixel.
       if (b) { offset = [b[0], img.height - b[3]]; img = crop(img, b); } else img = { width: 1, height: 1, data: new Uint8Array(4) };

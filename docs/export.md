@@ -30,7 +30,7 @@ The JSON and binary exports open a dialog for the page format first:
 **Premultiplied alpha** (pma) premultiplies the page pixels and writes `pma: true` to the atlas.
 Use it for KTX2 pages: compressed textures cannot be premultiplied on upload. The MCP tool
 `convert_project` has the same options (`texture_format`, `codec`, `quality`, `mipmaps`, `zstd`,
-`fallback`, `pma`); WebP there needs FFmpeg on PATH.
+`fallback`, `pma`); WebP encoding there is exact and lossless; reading WebP pages needs FFmpeg on PATH.
 
 Limits: KTX2 pages are at most 16384 px a side; the editor and the MCP server read the first mip
 level. Reading KTX2 needs the Basis Universal module (shipped with both); writing it takes a few

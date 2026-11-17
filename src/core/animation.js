@@ -4,7 +4,7 @@
 // Bone timeline values are relative to the setup pose: rotation, translation and shear are added,
 // scale is multiplied. A key is { time, value, curve }; vector values are arrays.
 
-import { LINEAR, ease } from './curve.js';
+import { LINEAR, ease, importedCurveValue } from './curve.js';
 import { lerp } from './math.js';
 
 /** Bone channels edited with the transform tools. Each is also the timeline property holding its keys. */
@@ -24,9 +24,10 @@ function copyValue(v) {
   return Array.isArray(v) ? v.slice() : v;
 }
 
-function interpolate(a, b, t, curve) {
-  if (typeof a === 'number') return lerp(a, b, ease(curve, t, 0));
-  if (Array.isArray(a)) return a.map((v, i) => lerp(v, b[i], ease(curve, t, i)));
+function interpolate(a, b, t, curve, start, end) {
+  const component = (v, next, i) => importedCurveValue(curve, start + t * (end - start), start, end, v, next, i) ?? lerp(v, next, ease(curve, t, i));
+  if (typeof a === 'number') return component(a, b, 0);
+  if (Array.isArray(a)) return a.map((v, i) => component(v, b[i], i));
   return a; // names and other discrete values hold until the next key
 }
 
@@ -40,7 +41,7 @@ export function sample(keys, time) {
   const b = keys[next];
   const span = b.time - a.time;
   const t = span > 0 ? (time - a.time) / span : 1;
-  return interpolate(a.value, b.value, t, a.curve);
+  return interpolate(a.value, b.value, t, a.curve, a.time, b.time);
 }
 
 const componentOf = (k, c) => (Array.isArray(k.value) ? k.value[c] : k.value);
@@ -54,7 +55,8 @@ export function sampleComponent(keys, time, c = 0) {
   const b = keys[next];
   const span = b.time - a.time;
   const va = componentOf(a, c);
-  return va + (componentOf(b, c) - va) * ease(a.curve, span > 0 ? (time - a.time) / span : 1, c);
+  const vb = componentOf(b, c);
+  return importedCurveValue(a.curve, time, a.time, b.time, va, vb, c) ?? va + (vb - va) * ease(a.curve, span > 0 ? (time - a.time) / span : 1, c);
 }
 
 /** Index of the last key at or before `time`, or -1. */

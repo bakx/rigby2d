@@ -56,6 +56,29 @@ export function ease(curve, t, component = 0) {
   return b ? bezierYForX(b[0], b[1], b[2], b[3], t) : t;
 }
 
+/** Samples an unedited imported 4.x curve using the source runtime's ten-segment table. */
+export function importedCurveValue(curve, time, start, end, from, to, component = 0) {
+  const src = curve?.src;
+  const c = src?.curve;
+  const i = component * 4;
+  if (!src?.sampled || !Array.isArray(c) || c.length < i + 4 || Math.abs(src.t1 - start) > 1e-6 || Math.abs(src.t2 - end) > 1e-6 ||
+      Math.abs(src.v[component] - from) > 1e-6 || Math.abs(src.nv[component] - to) > 1e-6) return undefined;
+  return sampledBezier(start, from, c[i], c[i + 1], c[i + 2], c[i + 3], end, to, time);
+}
+
+/** Evaluates an absolute cubic through the ten segments used by Spine 4.0. */
+export function sampledBezier(start, from, x1, y1, x2, y2, end, to, time) {
+  const bezier = (a, b, d, e, t) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * d + t * t * t * e; };
+  let px = start, py = from;
+  for (let step = 1; step <= 10; step++) {
+    const u = step / 10;
+    const x = bezier(start, x1, x2, end, u);
+    const y = bezier(from, y1, y2, to, u);
+    if (time <= x || step === 10) return Math.abs(x - px) < 1e-12 ? y : py + (time - px) * (y - py) / (x - px);
+    px = x; py = y;
+  }
+}
+
 function cubic(p1, p2, t) {
   const u = 1 - t;
   return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t;

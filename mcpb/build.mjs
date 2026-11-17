@@ -80,6 +80,10 @@ for (const dep of ['ag-psd', 'base64-js', 'pako', 'jpeg-js', 'ktx2-encoder', 'kt
     return rel === 'package.json' || /^LICEN[SC]E/i.test(rel) || rel === main || /^(dist|lib)[\\/]/.test(rel);
   });
 }
+// The exact lossless WebP encoder and its feature detector (including the Wasm codecs).
+for (const dep of ['@jsquash/webp', 'wasm-feature-detect']) {
+  copyDir(path.join(nm, dep), path.join(server, 'node_modules', dep), f => !/\.(ts|map)$/.test(f));
+}
 
 // ---- manifest, icon, notices ---------------------------------------------------------------
 

@@ -243,6 +243,13 @@ export function readSkeletonJson(obj, name = 'skeleton') {
   // Animations.
   const ctx = { v4, bone, slot, ikIndex, sk, warnings };
   sk.animations = entries(obj.animations).map(([animName, a]) => readAnimation(animName, a, ctx));
+  if (version.major === 4 && version.minor === 0) {
+    for (const animation of sk.animations) for (const timeline of [...animation.bones, ...animation.slots]) {
+      for (const keys of Object.values(timeline)) if (Array.isArray(keys)) {
+        for (const key of keys) if (key?.curve?.src) key.curve.src.sampled = true;
+      }
+    }
+  }
 
   const err = sk.validate();
   if (err) throw new Error(err);
@@ -407,7 +414,7 @@ function readAnimation(name, a, { v4, bone, slot, ikIndex, sk, warnings }) {
           tl.rgb = readNumericKeys(keys, (k) => hexToColor(k.color, [1, 1, 1]), v4);
           break;
         case 'alpha':
-          tl.alpha = readNumericKeys(keys, (k) => [k.value ?? 1], v4);
+          tl.alpha = readNumericKeys(keys, (k) => [k.value ?? 0], v4);
           break;
         case 'twoColor':
         case 'rgba2':
@@ -741,7 +748,12 @@ function writeJson(sk, version) {
     });
     for (const e of sk.extra.constraints ?? []) all.push({ order: e.index, data: clone(e.data) });
     for (const key of ['transform', 'path', 'physics']) {
-      for (const c of sk.extra[key] ?? []) all.push({ order: c.order ?? all.length, data: { type: key, ...clone(c) } });
+      for (const c of sk.extra[key] ?? []) {
+        const data = { type: key, ...clone(c) };
+        if (key === 'path' && data.slot === undefined && data.target !== undefined) { data.slot = data.target; delete data.target; }
+        if (key === 'transform' && data.source === undefined && data.target !== undefined) { data.source = data.target; delete data.target; }
+        all.push({ order: c.order ?? all.length, data });
+      }
     }
     if (all.length) json.constraints = all.sort((a, b) => a.order - b.order).map((e) => e.data);
   } else if (sk.ik.length) {
@@ -894,7 +906,7 @@ function writeAnimation(anim, sk, { v4, boneName, slotName, warnings }) {
     }
     if (v4) {
       if (tl.rgb.length) o.rgb = writeNumericKeys(tl.rgb, (v) => v, (v) => ({ color: colorToHex(v, 3) }), v4);
-      if (tl.alpha.length) o.alpha = writeNumericKeys(tl.alpha, asArray, single('value', 1), v4);
+      if (tl.alpha.length) o.alpha = writeNumericKeys(tl.alpha, asArray, (v) => ({ value: round(v) }), v4);
       if (tl.rgb2.length) o.rgb2 = writeNumericKeys(tl.rgb2, (v) => v, (v) => ({ light: colorToHex(v.slice(0, 3), 3), dark: colorToHex(v.slice(3, 6), 3) }), v4);
     } else if (tl.rgb.length || tl.alpha.length || tl.rgb2.length) {
       warnings.push(`'${anim.name}': separate rgb/alpha keys need format 4.x and were skipped`);

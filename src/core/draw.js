@@ -137,6 +137,7 @@ export function drawSkeletonGeometry(sk, pose, lookup, emit, { tint = [1, 1, 1, 
   for (const i of pose.drawOrder) {
     const slot = sk.slots[i];
     between?.(i);
+    if (slot && pose.activeBones && !pose.activeBones[slot.bone]) continue;
     const att = slot ? pose.slotAttachment(sk, i) : null;
     const type = att ? (att.type ?? 'region') : null;
     if (att && type === 'clipping' && !skip?.(i, att)) {

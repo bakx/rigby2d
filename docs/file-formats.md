@@ -22,6 +22,21 @@ order, attachments live in skins, and animations hold timelines with keys relati
 pose. Images come from the `.atlas` or from loose files in the skeleton's `images` folder. Atlas
 pages can be PNG, WebP or KTX2: the editor and the MCP tools decode all three (KTX2 through the
 Basis Universal transcoder), and honour the atlas `pma` line and the KTX2 premultiplied flag.
+If an atlas names a missing PNG page and a same-name KTX2 page is present, the editor and MCP
+tools use the compressed page after checking its dimensions and report the substitution. The
+declared page always takes priority when present.
+
+Imported Spine 4.0 animations use the source runtime's sampled Bézier interpolation and retain
+setup values before the first key. Newly authored Rigby2D curves continue to use cubic interpolation.
+
+Proportional path spacing follows Spine's fill fraction: `0` puts constrained bones at the path
+start and `1` fills the path. Older Rigby2D previews treated this value as a gap fraction, so rigs
+authored against that preview may need their proportional spacing adjusted. Existing files are not
+changed automatically.
+
+Atlas trimming leaves images used by meshes untrimmed to keep their UVs inside their region. WebP
+pages use exact lossless encoding, including RGB values of transparent pixels; reading WebP in the
+Node tools still requires FFmpeg.
 
 The editor reads PNG, JPEG, WebP and Basis Universal KTX2 atlas pages. Node-based image extraction
 and sprite-sheet exports support PNG and KTX2 pages, and WebP pages when FFmpeg is on PATH. The editor can export KTX2 pages with PNG fallbacks; the CLI supports `--texture ktx2` with ETC1S or UASTC, mipmaps, and optional PNG fallback. The KTX2 encoder and transcoder support Basis Universal textures. Some

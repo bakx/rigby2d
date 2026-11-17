@@ -4,7 +4,7 @@
 
 
 import { Animation, setKey } from '../core/animation.js';
-import { atlasFilter, parseAtlas, regionPlacement, textureFilterOf, writeAtlas } from '../core/atlas.js';
+import { atlasFilter, atlasPageCandidates, parseAtlas, regionPlacement, textureFilterOf, writeAtlas } from '../core/atlas.js';
 import { readSkeletonBinary, writeSkeletonBinary } from '../core/binary.js';
 import { isSkeletonJson, readSkeletonJson, writeSkeletonJson } from '../core/interop.js';
 
@@ -333,7 +333,21 @@ async function openSkeletonJson(path, fs, obj, images) {
     for (const page of pages) {
       let sheet;
       try {
-        sheet = await loadImage(fs, joinPath(dir, page.name));
+        let bytes, alternateUsed = null;
+        try {
+          bytes = await fs.readFile(joinPath(dir, page.name));
+        } catch (originalError) {
+          const [, alternate] = atlasPageCandidates(page.name);
+          if (!alternate) throw originalError;
+          try { bytes = await fs.readFile(joinPath(dir, alternate)); }
+          catch { throw originalError; }
+          alternateUsed = alternate;
+        }
+        sheet = await decodeImage(bytes);
+        if (alternateUsed && page.width && page.height && (sheet.width < page.width || sheet.width > page.width + 3 || sheet.height < page.height || sheet.height > page.height + 3)) {
+          throw new Error(`alternate page is ${sheet.width}×${sheet.height}, the atlas says ${page.width}×${page.height}`);
+        }
+        if (alternateUsed) warnings.push(`atlas page ${page.name} was unavailable; using ${alternateUsed}`);
       } catch (e) {
         warnings.push(`atlas page ${page.name}: ${e}`);
         continue;

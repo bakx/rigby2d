@@ -132,18 +132,20 @@ export class Pose {
    */
   apply(sk, anim, time, alpha, add = false) {
     const hold = alpha >= 0.5;
+    const spine40 = /^4\.0(?:\.|$)/.test(sk.header?.version ?? '');
+    const active = keys => keys?.length > 0 && (!spine40 || time >= keys[0].time);
     for (const t of anim.bones) {
       const bone = sk.bones[t.bone];
       if (!bone) continue;
       const setup = bone.setup;
       const L = this.local[t.bone];
       if (add) {
-        addBoneKeys(t, setup, L, time, alpha);
-        if (hold && t.inherit?.length) this.inherit[t.bone] = sample(t.inherit, time);
+        addBoneKeys(t, setup, L, time, alpha, spine40);
+        if (hold && active(t.inherit)) this.inherit[t.bone] = sample(t.inherit, time);
         continue;
       }
       let { x, y, rotation, scale_x: sx, scale_y: sy, shear_x: hx, shear_y: hy } = L;
-      const has = (keys) => keys !== undefined && keys.length > 0;
+      const has = active;
       if (has(t.rotate)) rotation = setup.rotation + sampleComponent(t.rotate, time, 0);
       if (has(t.translate)) {
         x = setup.x + sampleComponent(t.translate, time, 0);
@@ -186,17 +188,18 @@ export class Pose {
       const i = t.slot;
       if (i >= this.attachment.length) continue;
       let s;
-      if (hold && (s = sample(t.attachment, time)) !== undefined) this.attachment[i] = s;
+      const slotSample = keys => active(keys) ? sample(keys, time) : undefined;
+      if (hold && (s = slotSample(t.attachment)) !== undefined) this.attachment[i] = s;
       const color = this.color[i].slice();
       let dark = this.dark[i] ? this.dark[i].slice() : null;
-      if ((s = sample(t.color, time)) !== undefined) color.splice(0, 4, ...s);
-      if ((s = sample(t.rgb, time)) !== undefined) color.splice(0, 3, ...s);
-      if ((s = sample(t.alpha, time)) !== undefined) color[3] = s;
-      if ((s = sample(t.rgba2, time)) !== undefined) {
+      if ((s = slotSample(t.color)) !== undefined) color.splice(0, 4, ...s);
+      if ((s = slotSample(t.rgb)) !== undefined) color.splice(0, 3, ...s);
+      if ((s = slotSample(t.alpha)) !== undefined) color[3] = s;
+      if ((s = slotSample(t.rgba2)) !== undefined) {
         color.splice(0, 4, ...s.slice(0, 4));
         dark = s.slice(4, 7);
       }
-      if ((s = sample(t.rgb2, time)) !== undefined) {
+      if ((s = slotSample(t.rgb2)) !== undefined) {
         color.splice(0, 3, ...s.slice(0, 3));
         dark = s.slice(3, 6);
       }
@@ -205,7 +208,7 @@ export class Pose {
       if (dark) this.dark[i] = (this.dark[i] ?? dark).map((c, k) => lerp(c, dark[k], alpha));
     }
     for (const t of anim.deform) {
-      if (!t.keys.length) continue;
+      if (!active(t.keys)) continue;
       const slot = sk.slots[t.slot];
       const att = slot && sk.attachment(t.slot, t.attachment, t.skin ?? sk.skin);
       if (!att) continue;
@@ -223,7 +226,7 @@ export class Pose {
           const slot = sk.slots.findIndex((s) => s.name === slotName);
           if (slot < 0) continue;
           for (const [name, timelines] of Object.entries(atts)) {
-            if (!Array.isArray(timelines.sequence) || this.attachment[slot] !== name) continue;
+            if (!active(timelines.sequence) || this.attachment[slot] !== name) continue;
             const att = sk.attachment(slot, name, skin === 'default' ? null : skin) ?? sk.attachment(slot, name);
             if (!att?.sequence) continue;
             const index = sequenceIndexAt(timelines.sequence, time, att.sequence.count ?? 1);
@@ -236,7 +239,7 @@ export class Pose {
       const i = keyIndexAt(anim.drawOrder, time);
       if (i >= 0) this.drawOrder = applyDrawOrder(sk.slots.length, anim.drawOrder[i].value);
     }
-    applyConstraintTimelines(this.ensureConstraints(sk), this.constraintState, anim, time, alpha);
+    applyConstraintTimelines(this.ensureConstraints(sk), this.constraintState, anim, time, alpha, spine40);
     for (const t of anim.ik) {
       const state = this.ik[t.constraint];
       if (!state) continue;
@@ -263,6 +266,11 @@ export class Pose {
   /** Recomputes world transforms from local transforms, then applies constraints in order. */
   updateWorld(sk) {
     const n = this.local.length;
+    this.activeBones = sk.bones.map(b => !b.skinRequired);
+    const activeSkin = sk.skin ? sk.findSkin(sk.skin) : null;
+    if (activeSkin) for (const index of activeSkin.bones) {
+      for (let b = index; b !== null && b !== undefined; b = sk.bones[b]?.parent) this.activeBones[b] = true;
+    }
     for (let i = 0; i < n; i++) this.applied[i] = this.applied[i] ? copyTransform(this.local[i], this.applied[i]) : cloneTransform(this.local[i]);
     this.applied.length = n;
     this.computeWorld(sk);
@@ -428,6 +436,16 @@ export class Pose {
       return;
     }
     const [p, ch] = c.bones;
+    // A scaled ancestor changes distances in world space. Spine solves a uniform two-bone
+    // chain in the upper bone's parent space, where its two segments are circular.
+    if (sk.bones[ch].parent === p && sk.bones[p].inherit === 'normal' && sk.bones[ch].inherit === 'normal' &&
+        Math.abs(Math.abs(this.applied[p].scale_x) - Math.abs(this.applied[p].scale_y)) < 1e-4 &&
+        !state.stretch && !state.softness && this.solveUniformIk(sk, p, ch, target, mix, state)) return;
+    // A nonuniformly scaled upper bone makes the lower bone's reachable area an ellipse.
+    // Solve in the upper bone's parent space; a world-space triangle assumes circles and
+    // drifts substantially for these chains.
+    if (sk.bones[ch].parent === p && Math.abs(Math.abs(this.applied[p].scale_x) - Math.abs(this.applied[p].scale_y)) > 1e-4 &&
+        !state.stretch && !state.softness && this.solveEllipticalIk(sk, p, ch, target, mix, state)) return;
     const P = this.world[p].apply([0, 0]);
     const C = this.world[ch].apply([0, 0]);
     const tip = this.world[ch].apply([sk.bones[ch].length, 0]);
@@ -464,6 +482,76 @@ export class Pose {
     this.applied[p].rotation += delta * mix * parentSign(p);
     this.updateBranch(sk, p);
     this.finishTwoBone(sk, p, ch, target, mix, state, parentSign);
+  }
+
+  solveUniformIk(sk, p, ch, target, mix, state) {
+    const upper = this.applied[p], lower = this.applied[ch];
+    const ancestor = sk.bones[p].parent;
+    const frame = ancestor === null ? Affine.identity() : this.world[ancestor];
+    if (Math.abs(frame.determinant()) < 1e-10) return false;
+    const inv = frame.inverse();
+    const joint = inv.apply(this.world[ch].apply([0, 0]));
+    const dx = joint[0] - upper.x, dy = joint[1] - upper.y;
+    const l1 = Math.hypot(dx, dy), l2 = sk.bones[ch].length * Math.abs(lower.scale_x * upper.scale_x);
+    if (l1 < 1e-8 || l2 < 1e-8) return false;
+    const goal = inv.apply(target), tx = goal[0] - upper.x, ty = goal[1] - upper.y;
+    const cosine = Math.max(-1, Math.min(1, (tx * tx + ty * ty - l1 * l1 - l2 * l2) / (2 * l1 * l2)));
+    const bend = state.bendPositive ? 1 : -1;
+    const second = Math.acos(cosine) * bend;
+    const first = Math.atan2(ty, tx) - Math.atan2(l2 * Math.sin(second), l1 + l2 * cosine);
+    const sign = (upper.scale_x < 0 ? -1 : 1) * (upper.scale_y < 0 ? -1 : 1);
+    const offset = Math.atan2(lower.y, lower.x) * sign;
+    const upperAngle = (first - offset) / DEG + (upper.scale_x < 0 ? 180 : 0);
+    const lowerAngle = ((second + offset) / DEG - lower.shear_x) * sign + (lower.scale_x < 0 ? 180 : 0);
+    upper.rotation += wrapDegrees(upperAngle - upper.rotation) * mix;
+    lower.rotation += wrapDegrees(lowerAngle - lower.rotation) * mix;
+    this.updateBranch(sk, p);
+    return true;
+  }
+
+  solveEllipticalIk(sk, p, ch, target, mix, state) {
+    const upper = this.applied[p], lower = this.applied[ch];
+    const sx = Math.abs(upper.scale_x), sy = Math.abs(upper.scale_y);
+    const childScale = Math.abs(lower.scale_x), childLength = sk.bones[ch].length * childScale;
+    const parent = sk.bones[p].parent;
+    const parentWorld = parent === null ? Affine.identity() : this.world[parent];
+    if (Math.abs(parentWorld.determinant()) < 1e-10 || sx < 1e-8 || sy < 1e-8 || childLength < 1e-8) return false;
+    const inv = parentWorld.inverse();
+    const joint = inv.apply(this.world[p].apply([lower.x, 0]));
+    const length = Math.hypot(joint[0] - upper.x, joint[1] - upper.y);
+    if (length < 1e-8) return false;
+    const end = inv.apply(target), tx = end[0] - upper.x, ty = end[1] - upper.y;
+    const distance2 = tx * tx + ty * ty;
+    const ex = sx * childLength, ey = sy * childLength;
+    // Intersect the target-radius circle with the reachable ellipse in the upper-bone frame.
+    const a = ex * ex - ey * ey, b = 2 * length * ex, c = length * length + ey * ey - distance2;
+    const candidates = [];
+    const disc = b * b - 4 * a * c;
+    if (Math.abs(a) < 1e-10) candidates.push(-c / b);
+    else if (disc >= 0) { const root = Math.sqrt(disc); candidates.push((-b + root) / (2 * a), (-b - root) / (2 * a)); }
+    let valid = candidates.filter(v => Number.isFinite(v) && v >= -1 && v <= 1);
+    let cosine;
+    if (valid.length) cosine = valid.sort((u, v) => Math.abs(length + ex * u) - Math.abs(length + ex * v))[0];
+    else {
+      valid = [-1, 1];
+      const extremum = -b / (2 * a);
+      if (Number.isFinite(extremum) && extremum >= -1 && extremum <= 1) valid.push(extremum);
+      cosine = valid.sort((u, v) => Math.abs(a * u * u + b * u + c) - Math.abs(a * v * v + b * v + c))[0];
+    }
+    const bend = state.bendPositive ? 1 : -1;
+    const sine = Math.sqrt(Math.max(0, 1 - cosine * cosine)) * bend;
+    const first = Math.atan2(ty, tx) - Math.atan2(ey * sine, length + ex * cosine);
+    const second = Math.atan2(sine, cosine);
+    const sign = (upper.scale_x < 0 ? -1 : 1) * (upper.scale_y < 0 ? -1 : 1);
+    const upperAngle = first / DEG + (upper.scale_x < 0 ? 180 : 0);
+    const lowerAngle = (second / DEG - lower.shear_x) * sign + (lower.scale_x < 0 ? 180 : 0);
+    upper.rotation += wrapDegrees(upperAngle - upper.rotation) * mix;
+    upper.shear_x = 0; upper.shear_y = 0;
+    lower.y = 0;
+    this.updateBranch(sk, p);
+    lower.rotation += wrapDegrees(lowerAngle - lower.rotation) * mix;
+    this.updateBranch(sk, ch);
+    return true;
   }
 
   finishTwoBone(sk, p, ch, target, mix, state, parentSign) {
@@ -546,7 +634,7 @@ export class Pose {
     const out = [];
     for (const i of this.drawOrder) {
       const slot = sk.slots[i];
-      if (!slot) continue;
+      if (!slot || !this.activeBones[slot.bone]) continue;
       const att = this.slotAttachment(sk, i);
       if (!att) continue;
       const tint = this.color[i];
@@ -583,8 +671,8 @@ export class Pose {
  * Adds a bone timeline's change from the setup pose (times `alpha`) to local transform `L`:
  * offsets for rotation, translation and shear, a factor for scale (as Spine's additive blend).
  */
-function addBoneKeys(t, setup, L, time, alpha) {
-  const has = (keys) => keys !== undefined && keys.length > 0;
+function addBoneKeys(t, setup, L, time, alpha, firstKeyApplies = false) {
+  const has = (keys) => keys?.length > 0 && (!firstKeyApplies || time >= keys[0].time);
   if (has(t.rotate)) L.rotation += sampleComponent(t.rotate, time, 0) * alpha;
   if (has(t.translate)) {
     L.x += sampleComponent(t.translate, time, 0) * alpha;

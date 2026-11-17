@@ -4,6 +4,7 @@
 // `anim.extra`, and solved on a Pose's world transforms.
 
 import { wrapDegrees } from './math.js';
+import { sampledBezier } from './curve.js';
 
 const DEG = Math.PI / 180;
 const EPSILON = 1e-5;
@@ -208,33 +209,34 @@ export function constraintActive(sk, c) {
 // ---- animation ---------------------------------------------------------------------------------
 
 /** Applies the constraint timelines of `anim` at `time` to `states`, blended by `alpha`. */
-export function applyConstraintTimelines(list, states, anim, time, alpha) {
+export function applyConstraintTimelines(list, states, anim, time, alpha, sampled = false) {
   const extra = anim.extra ?? {};
   if (!extra.transform && !extra.path && !extra.physics && !extra.slider) return;
   list.forEach((c, i) => {
     const state = states[i];
+    const active = keys => Array.isArray(keys) && keys.length && (!sampled || time >= (keys[0].time ?? 0));
     if (c.type === 'transform') {
       const keys = extra.transform?.[c.name];
-      if (!Array.isArray(keys) || !keys.length) return;
+      if (!active(keys)) return;
       const legacy = keys.some((k) => k.rotateMix !== undefined || k.translateMix !== undefined || k.scaleMix !== undefined || k.shearMix !== undefined);
       const values = legacy
         ? sampleRaw(keys, time, (k) => {
             const t = k.translateMix ?? 1;
             const s = k.scaleMix ?? 1;
             return [k.rotateMix ?? 1, t, t, s, s, k.shearMix ?? 1];
-          })
+          }, sampled)
         : sampleRaw(keys, time, (k) => {
             const x = k.mixX ?? 1;
             const sx = k.mixScaleX ?? 1;
             return [k.mixRotate ?? 1, x, k.mixY ?? x, sx, k.mixScaleY ?? sx, k.mixShearY ?? 1];
-          });
+          }, sampled);
       PROPS.forEach((p, j) => (state.mix[p] += (values[j] - state.mix[p]) * alpha));
     } else if (c.type === 'slider') {
       const t = extra.slider?.[c.name];
       if (!t) return;
       for (const key of ['time', 'mix']) {
-        if (!Array.isArray(t[key]) || !t[key].length) continue;
-        const [v] = sampleRaw(t[key], time, (k) => [k.value ?? (key === 'mix' ? 1 : 0)]);
+        if (!active(t[key])) continue;
+        const [v] = sampleRaw(t[key], time, (k) => [k.value ?? (key === 'mix' ? 1 : 0)], sampled);
         state[key] += (v - state[key]) * alpha;
       }
     } else if (c.type === 'physics') {
@@ -246,27 +248,27 @@ export function applyConstraintTimelines(list, states, anim, time, alpha) {
         if (!source) continue;
         for (const key of PHYSICS_VALUES) {
           const keys = source[key];
-          if (!Array.isArray(keys) || !keys.length || (global && !c.globals[key])) continue;
-          const [v] = sampleRaw(keys, time, (k) => [k.value ?? 0]);
+          if (!active(keys) || (global && !c.globals[key])) continue;
+          const [v] = sampleRaw(keys, time, (k) => [k.value ?? 0], sampled);
           state[key] += (v - state[key]) * alpha;
         }
       }
     } else if (c.type === 'path') {
       const t = extra.path?.[c.name];
       if (!t) return;
-      if (t.position?.length) {
-        const [v] = sampleRaw(t.position, time, (k) => [k.value ?? k.position ?? 0]);
+      if (active(t.position)) {
+        const [v] = sampleRaw(t.position, time, (k) => [k.value ?? k.position ?? 0], sampled);
         state.position += (v - state.position) * alpha;
       }
-      if (t.spacing?.length) {
-        const [v] = sampleRaw(t.spacing, time, (k) => [k.value ?? k.spacing ?? 0]);
+      if (active(t.spacing)) {
+        const [v] = sampleRaw(t.spacing, time, (k) => [k.value ?? k.spacing ?? 0], sampled);
         state.spacing += (v - state.spacing) * alpha;
       }
-      if (t.mix?.length) {
+      if (active(t.mix)) {
         const [r, x, y] = sampleRaw(t.mix, time, (k) =>
           k.rotateMix !== undefined || k.translateMix !== undefined
             ? [k.rotateMix ?? 1, k.translateMix ?? 1, k.translateMix ?? 1]
-            : [k.mixRotate ?? 1, k.mixX ?? 1, k.mixY ?? k.mixX ?? 1],
+            : [k.mixRotate ?? 1, k.mixX ?? 1, k.mixY ?? k.mixX ?? 1], sampled,
         );
         state.mixRotate += (r - state.mixRotate) * alpha;
         state.mixX += (x - state.mixX) * alpha;
@@ -280,7 +282,7 @@ export function applyConstraintTimelines(list, states, anim, time, alpha) {
  * Samples raw keys (as stored in the file) at `time`. `read(key)` returns the key's values.
  * Curves: "stepped", 4.x absolute control points (4 per value), or 3.8 normalized control points.
  */
-export function sampleRaw(keys, time, read) {
+export function sampleRaw(keys, time, read, sampled = false) {
   if (time < (keys[0].time ?? 0)) return read(keys[0]);
   let i = 0;
   while (i + 1 < keys.length && (keys[i + 1].time ?? 0) <= time) i++;
@@ -296,6 +298,7 @@ export function sampleRaw(keys, time, read) {
   return va.map((v0, j) => {
     const v1 = vb[j];
     if (Array.isArray(c) && c.length >= 4 * (j + 1) && c.length >= 4 * va.length) {
+      if (sampled) return sampledBezier(t0, v0, c[4 * j], c[4 * j + 1], c[4 * j + 2], c[4 * j + 3], t1, v1, time);
       return bezierAt(t0, v0, c[4 * j], c[4 * j + 1], c[4 * j + 2], c[4 * j + 3], t1, v1, time);
     }
     let u = (time - t0) / (t1 - t0);
@@ -463,19 +466,21 @@ export function solvePath(sk, pose, c, state) {
     const len = lengths[i];
     switch (c.spacingMode) {
       case 'percent':
-      case 'fixed':
         spaces[i + 1] = state.spacing;
         break;
       case 'proportional':
-        spaces[i + 1] = len;
+        spaces[i + 1] = sk.bones[c.bones[i]].length < EPSILON ? state.spacing : len;
         break;
-      default: // length
-        spaces[i + 1] = len < EPSILON ? 0 : len + state.spacing;
+      default: { // fixed or length, scaled along the bone's X axis
+        const setupLength = sk.bones[c.bones[i]].length;
+        spaces[i + 1] = setupLength < EPSILON ? state.spacing : ((c.spacingMode === 'length' ? setupLength : 0) + state.spacing) * len / setupLength;
+      }
     }
   }
   if (c.spacingMode === 'proportional') {
-    const sum = spaces.reduce((s, v) => s + v, 0);
-    if (sum > EPSILON) for (let i = 1; i < count; i++) spaces[i] *= (path.length * (1 - Math.min(1, state.spacing))) / sum;
+    const sum = lengths.slice(0, count - 1).reduce((s, length, i) => s + (sk.bones[c.bones[i]].length < EPSILON ? 0 : length), 0);
+    const multiplier = sum > EPSILON ? path.length * state.spacing / sum : path.length / count;
+    for (let i = 1; i < count; i++) spaces[i] *= multiplier;
   }
   let position = state.position;
   if (c.positionMode === 'percent') position *= path.length;
@@ -487,21 +492,22 @@ export function solvePath(sk, pose, c, state) {
   }
 
   const desired = new Map();
-  const reflect = (m) => (m.determinant() < 0 ? -1 : 1);
+  const reflection = pose.world[sk.slots[c.slot].bone].determinant() < 0 ? -1 : 1;
+  let boneX = points[0][0], boneY = points[0][1];
   for (let i = 0; i < n; i++) {
     const b = c.bones[i];
     const m = pose.world[b].clone();
-    const [x, y, angle] = points[i];
-    m.tx += (x - m.tx) * mixX;
-    m.ty += (y - m.ty) * mixY;
+    const angle = points[i][2];
+    m.tx += (boneX - m.tx) * mixX;
+    m.ty += (boneY - m.ty) * mixY;
+    const [nx, ny] = points[i + 1] ?? points[i];
+    const dx = nx - boneX, dy = ny - boneY;
+    boneX = nx; boneY = ny;
     if (mixRotate > 0) {
       let r;
       if (tangents) {
         r = angle;
       } else {
-        const [nx, ny] = points[i + 1];
-        const dx = nx - m.tx;
-        const dy = ny - m.ty;
         if (chainScale && lengths[i] >= EPSILON) {
           const s = (Math.hypot(dx, dy) / lengths[i] - 1) * mixRotate + 1;
           m.a *= s;
@@ -509,7 +515,12 @@ export function solvePath(sk, pose, c, state) {
         }
         r = Math.hypot(dx, dy) > EPSILON ? axisAngle(dx, dy) : angle;
       }
-      r = wrapDegrees(r - axisAngle(m.a, m.b) + c.offsetRotation * reflect(m));
+      r = wrapDegrees(r - axisAngle(m.a, m.b));
+      if (c.rotateMode === 'chain' && !c.offsetRotation) {
+        const rad = r * DEG, cos = Math.cos(rad), sin = Math.sin(rad), length = sk.bones[b].length;
+        boneX += (length * (cos * m.a - sin * m.b) - dx) * mixRotate;
+        boneY += (length * (sin * m.a + cos * m.b) - dy) * mixRotate;
+      } else r = wrapDegrees(r + c.offsetRotation * reflection);
       rotateLinear(m, r * mixRotate);
     }
     desired.set(b, m);
@@ -531,7 +542,7 @@ function buildPath(v, att) {
     const next = att.closed && i === pointCount - 1 ? 0 : o + 6;
     curves.push([v[o + 2], v[o + 3], v[o + 4], v[o + 5], v[next], v[next + 1], v[next + 2], v[next + 3]]);
   }
-  const SEGMENTS = 16;
+  const SEGMENTS = 10;
   // Cumulative arc length table per curve (constant speed) or the stored lengths.
   const tables = curves.map((cv) => {
     const t = [0];
@@ -548,7 +559,19 @@ function buildPath(v, att) {
   const ends = [];
   if (att.constantSpeed || !att.lengths?.length) {
     let sum = 0;
-    for (const t of tables) ends.push((sum += t[SEGMENTS]));
+    // The runtime estimates each curve with four chords to locate its span, then
+    // uses ten finer chords within the selected curve to interpolate its parameter.
+    for (const cv of curves) {
+      let length = 0, px = cv[0], py = cv[1];
+      for (let s = 1; s <= 4; s++) {
+        const u = s / 4;
+        const x = cubic(cv[0], cv[2], cv[4], cv[6], u);
+        const y = cubic(cv[1], cv[3], cv[5], cv[7], u);
+        length += Math.hypot(x - px, y - py);
+        px = x; py = y;
+      }
+      ends.push((sum += length));
+    }
   } else {
     for (let i = 0; i < curveCount; i++) ends.push(att.lengths[i] ?? ends[i - 1] ?? 0);
   }

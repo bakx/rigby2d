@@ -230,6 +230,38 @@ test('4.x features: split timelines, rgba/alpha, absolute per-value curves', () 
   assert.equal(back.toJson(), sk.toJson());
 });
 
+test('4.0 imported curves retain overshoot between equal values', () => {
+  const json = {
+    skeleton: { [V]: '4.0.31' }, bones: [{ name: 'root' }], slots: [], skins: [],
+    animations: { motion: { bones: { root: { translatex: [
+      { value: 0, curve: [1 / 3, 2, 2 / 3, 2] }, { time: 1, value: 0 },
+    ] } } } },
+  };
+  const sk = readSkeletonJson(json).skeleton;
+  const pose = new Pose(sk);
+  pose.apply(sk, sk.animations[0], 0.45, 1); pose.updateWorld(sk);
+  assert.ok(close(pose.world[0].tx, 1.47, 1e-5));
+});
+
+test('4.0 timelines leave the setup pose and attachment intact before their first key', () => {
+  const json = {
+    skeleton: { [V]: '4.0.31' },
+    bones: [{ name: 'root' }, { name: 'driven', parent: 'root', x: 10 }],
+    slots: [{ name: 'art', bone: 'root', attachment: 'first' }],
+    skins: [{ name: 'default', attachments: { art: { first: { width: 10, height: 10 }, second: { width: 10, height: 10 } } } }],
+    transform: [{ name: 'follow', bones: ['driven'], target: 'root', mixX: 0, mixY: 0, mixRotate: 0, mixScaleX: 0, mixScaleY: 0, mixShearY: 0 }],
+    animations: { motion: { bones: { driven: { translate: [{ time: 1, x: 50, y: 0 }] } },
+      slots: { art: { attachment: [{ time: 1, name: 'second' }] } },
+      transform: { follow: [{ time: 1, mixX: 1, mixY: 1 }] } } },
+  };
+  const sk = readSkeletonJson(json).skeleton, pose = new Pose(sk);
+  pose.apply(sk, sk.animations[0], 0.5, 1); pose.updateWorld(sk);
+  assert.equal(pose.attachment[0], 'first');
+  assert.equal(pose.world[1].tx, 10);
+  pose.reset(sk); pose.apply(sk, sk.animations[0], 1, 1); pose.updateWorld(sk);
+  assert.equal(pose.attachment[0], 'second');
+});
+
 test('internal snapshot keeps imported-only data', () => {
   const { skeleton: sk } = readSkeletonJson(structuredClone(FIXTURE_38), 'hero');
   const back = Skeleton.fromJson(sk.toJson());

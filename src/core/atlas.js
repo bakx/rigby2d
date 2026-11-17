@@ -18,6 +18,11 @@
 
 const ints = (v) => v.split(',').map((s) => Number(s.trim()));
 
+/** A compressed page may have replaced a PNG after the atlas was exported. */
+export function atlasPageCandidates(name) {
+  return /\.png$/i.test(name) ? [name, name.replace(/\.png$/i, '.ktx2')] : [name];
+}
+
 /** Parses atlas text. Returns { pages }. */
 export function parseAtlas(text) {
   const lines = text.replace(/^﻿/, '').split(/\r?\n/);

@@ -1959,7 +1959,7 @@ function writeAnimation(w, anim, { boneIndex, slotIndex, constraintIndex, skinIn
           w.float(k.time ?? 0);
           if (kind === 'rgb') w.color3(k.color);
           else if (kind === 'rgb2') { w.color3(k.light); w.color3(k.dark); }
-          else w.byte(Math.round((k.value ?? 1) * 255));
+          else w.byte(Math.round((k.value ?? 0) * 255));
           if (f > 0) writeSegmentCurve(w, keys[f - 1].curve);
         });
       } else if (kind === 'rgba') {

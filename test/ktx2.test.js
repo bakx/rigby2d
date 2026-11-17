@@ -131,6 +131,26 @@ test('convert_project: KTX2 pages with a PNG fallback, read back by every page r
   const preview = await tools.render_preview({ path: out, animation: 'idle', output: path.join(tmp, 'preview.png'), times: [0] });
   assert.ok(preview);
 
+  // A compressed replacement remains usable when an older atlas still names its PNG page.
+  const originalAtlas = await fs.readFile(path.join(tmp, 'k.atlas'), 'utf8');
+  await fs.writeFile(path.join(tmp, 'k.atlas'), originalAtlas.replace(/^k\.ktx2/m, 'k.png'));
+  await fs.unlink(path.join(tmp, 'k.png'));
+  const replaced = await tools.validate_project({ path: out });
+  assert.equal(replaced.valid, true, JSON.stringify(replaced.errors));
+  assert.ok(replaced.warnings.some(w => /k\.png.*using k\.ktx2/i.test(w)));
+  const fallbackImages = await projectImages(await loadProject(out), new Set(Object.keys(pictures)));
+  assert.equal(fallbackImages.get('body').width, pictures.body.width);
+  assert.ok(await tools.render_preview({ path: out, animation: 'idle', output: path.join(tmp, 'compressed-preview.png'), times: [0] }));
+  await fs.writeFile(path.join(tmp, 'k.png'), 'invalid page');
+  const corruptDeclared = await tools.validate_project({ path: out });
+  assert.equal(corruptDeclared.checks.pages, 'failed');
+  await fs.unlink(path.join(tmp, 'k.png'));
+  await fs.writeFile(path.join(tmp, 'k.atlas'), originalAtlas.replace(/^k\.ktx2/m, 'k.png').replace(/^size: \d+, \d+$/m, 'size: 7, 7'));
+  const wrongReplacement = await tools.validate_project({ path: out });
+  assert.equal(wrongReplacement.checks.pages, 'failed');
+  assert.match(wrongReplacement.errors.join('\n'), /alternate k\.ktx2 is .*atlas says 7×7/);
+  await fs.writeFile(path.join(tmp, 'k.atlas'), originalAtlas);
+
   // Converting the KTX2 project back to PNG pages goes through the transcoder too.
   await fs.mkdir(path.join(tmp, 'png'));
   const back = await tools.convert_project({ input: out, output: path.join(tmp, 'png', 'b.json'), atlas: true });

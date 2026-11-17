@@ -72,7 +72,7 @@ Report loop seams, large frame jumps, missing/hidden attachments, pinned IK targ
 
 ### `inspect_project`
 
-Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, the animations with their durations, and any read warnings. *Read only.*
+Summarize a Rigby2D project file: format and version, counts of bones, slots, skins, constraints, events and images, atlas-page metadata, animation durations, and read warnings. *Read only.*
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -108,9 +108,7 @@ Evaluate the skeleton with the Rigby2D runtime: the setup pose, or an animation 
 
 ### `validate_project`
 
-Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas pages (PNG, WebP or KTX2) that are missing or not the size the atlas says, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. *Read only.*
-
-Validation fails when required images or atlas pages are missing or cannot be decoded. JPEG and WebP decoding in the Node tools requires FFmpeg on PATH.
+Check a project for problems: structure, images missing from its work file, atlas or images folder, atlas pages (PNG, WebP or KTX2) that are missing or not the size the atlas says, animations without keys, whether skeleton JSON 4.3 round-trips the data exactly, and whether binary .skel export is possible. Missing or undecodable artwork fails validation; JPEG and WebP decoding requires FFmpeg. A missing PNG atlas page may use a same-name KTX2 page, with a warning. *Read only.*
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -133,8 +131,8 @@ Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3).
 | `max_size` | integer | Largest page side; more pages are added when it overflows (default 4096). |
 | `power_of_two` | boolean | Round page sizes up to powers of two (default false). |
 | `scale` | number | Resample the images by this factor and write the atlas scale line; the skeleton is unchanged (default 1). |
-| `trim` | boolean | Crop each region to its alpha bounds and write offsets, so placement does not change (default false). |
-| `texture_format` | `'png'`, `'webp'`, `'ktx2'` | Page file format (default png). webp needs FFmpeg on PATH (lossless). ktx2 is Basis Universal, which runtimes transcode to the GPU format at hand; pair it with pma: true. |
+| `trim` | boolean | Crop region images to alpha bounds; mesh images retain their full UV rectangle (default false). |
+| `texture_format` | `'png'`, `'webp'`, `'ktx2'` | Page file format (default png). WebP is exact lossless; reading WebP requires FFmpeg. KTX2 is Basis Universal; pair it with pma: true. |
 | `codec` | `'etc1s'`, `'uastc'` | KTX2 codec: etc1s is smallest (lossy, banding on gradients), uastc is near lossless and about 4× larger (default etc1s). |
 | `quality` | integer | KTX2 quality: ETC1S quality level, or the UASTC effort when scaled to 0-4 (default 128). |
 | `mipmaps` | boolean | Store a mip chain in the KTX2 pages (default false; atlases drawn at 1:1 need none). |
@@ -157,10 +155,7 @@ Write a Rigby2D model for Defold from a character (.rigby work file, or .skel / 
 
 ### `export_sprite_sheet`
 
-Render animations frame by frame into a sprite sheet for engines that play frames: 'json' writes <name>.png and <name>.json (a JSON hash as TexturePacker writes it, read by Phaser, PixiJS and others, with Aseprite frameTags, durations and a pivot at the skeleton's origin); 'defold' writes <name>/<animation>_<n>.png frames and <name>.atlas; 'frames' writes the frames only. Physics settles into loops first. Reads .rigby, or .json / .skel with its atlas. Refuses to replace files unless overwrite is true.
-
-WebP atlas pages require FFmpeg on PATH when extracting images or rendering sprite sheets with the Node tools.
-Defold and sprite-sheet exports fail when required artwork is missing.
+Render animations frame by frame into a sprite sheet for engines that play frames: 'json' writes <name>.png and <name>.json (a JSON hash as TexturePacker writes it, read by Phaser, PixiJS and others, with Aseprite frameTags, durations and a pivot at the skeleton's origin); 'defold' writes <name>/<animation>_<n>.png frames and <name>.atlas; 'frames' writes the frames only. Physics settles into loops first. Reads .rigby, or .json / .skel with its atlas. Missing artwork fails export; WebP pages require FFmpeg. Refuses to replace files unless overwrite is true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |

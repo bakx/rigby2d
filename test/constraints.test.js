@@ -81,6 +81,11 @@ test('raw key sampling: absolute 4.x curves, 3.8 curves and stepped keys', () =>
   assert.ok(close(sampleRaw([{ time: 0, v: 0, curve: 0.25, c2: 0.25, c3: 0.75, c4: 0.75 }, { time: 1, v: 4 }], 0.5, read)[0], 2));
 });
 
+test('4.0 constraint curves use the source runtime segment interpolation', () => {
+  const keys = [{ value: 0, curve: [1 / 3, 2, 2 / 3, 2] }, { time: 1, value: 0 }];
+  assert.ok(close(sampleRaw(keys, 0.45, k => [k.value], true)[0], 1.47, 1e-5));
+});
+
 // A straight path along +x from (0, 0) to (300, 0): points at x = 0, 150, 300.
 const pathVertices = [-50, 0, 0, 0, 50, 0, 100, 0, 150, 0, 200, 0, 250, 0, 300, 0, 350, 0];
 const pathRig = (constraint) => ({
@@ -114,6 +119,23 @@ test('path constraint lays a chain along the path', () => {
   // chainScale stretches each 50-long bone to the 75 gap.
   const a = p2.world[1];
   assert.ok(close(Math.hypot(a.a, a.b), 1.5, 1e-2));
+});
+
+test('curved chain paths match reference positions and keep bone tips joined', () => {
+  const json = {
+    skeleton: { [V]: '4.0.31' },
+    bones: [{ name: 'root' }, { name: 'a', parent: 'root', length: 50 }, { name: 'b', parent: 'a', x: 50, length: 50 }, { name: 'c', parent: 'b', x: 50, length: 50 }],
+    slots: [{ name: 'path', bone: 'root', attachment: 'path' }],
+    path: [{ name: 'p', bones: ['a', 'b', 'c'], target: 'path', position: 0.35, spacingMode: 'percent', spacing: 0.2, rotateMode: 'chain' }],
+    skins: [{ name: 'default', attachments: { path: { path: { type: 'path', vertexCount: 9,
+      vertices: [-10, 0, 0, 0, 15, 120, 70, 130, 100, 0, 120, -100, 170, -130, 200, 0, 210, 0], lengths: [180, 360, 540] } } } }],
+  };
+  const sk = readSkeletonJson(json).skeleton, pose = new Pose(sk);
+  const expected = [[75.812038, 68.393194], [91.491713, 20.915328], [114.266584, -23.596527]];
+  for (let i = 0; i < expected.length; i++) {
+    const m = pose.world[i + 1];
+    assert.ok(close(m.tx, expected[i][0], 1e-4) && close(m.ty, expected[i][1], 1e-4));
+  }
 });
 
 // A bone pointing up from a movable root, with rotation physics.
@@ -226,6 +248,26 @@ test('a stretching two-bone IK reaches a target out of reach, bent or straight',
     const pose = new Pose(sk);
     const [x, y] = pose.world[2].apply([100, 0]);
     assert.ok(close(x, tx, 1e-6) && close(y, ty, 1e-6), `tip ${x}, ${y} for target ${tx}, ${ty}`);
+  }
+});
+
+test('two-bone IK with uneven scale agrees with reference poses', () => {
+  const cases = [
+    [1.2, 0.8, 120, 110, 1, true, 139.993697, 31.229828, -0.199937, 0.787702],
+    [-1.2, 0.8, -60, 80, 0.5, false, -96.874117, 2.788959, -0.866471, 0.443039],
+    [1.2, 0.8, 400, 100, 1, true, 138.014381, 51.739492, 1.180144, 0.217395],
+    [0.8, 1.4, 10, 0, 0.7, false, 98.098450, 12.661254, -0.665728, -1.076507],
+  ];
+  for (const [sx, sy, tx, ty, mix, bend, x, y, a, b] of cases) {
+    const json = {
+      skeleton: { [V]: '4.0.31' },
+      bones: [{ name: 'root' }, { name: 'a', parent: 'root', x: 20, y: 30, rotation: 10, scaleX: sx, scaleY: sy, length: 100 },
+        { name: 'b', parent: 'a', x: 100, y: 5, length: 100, rotation: -15 }, { name: 't', parent: 'root', x: tx, y: ty }],
+      ik: [{ name: 'ik', bones: ['a', 'b'], target: 't', bendPositive: bend, mix }], slots: [], skins: [],
+    };
+    const sk = readSkeletonJson(json).skeleton;
+    const m = new Pose(sk).world[2];
+    for (const [actual, expected] of [[m.tx, x], [m.ty, y], [m.a, a], [m.b, b]]) assert.ok(close(actual, expected, 1e-4), `${actual} != ${expected}`);
   }
 });
 
