@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { TextureAtlas, AtlasAttachmentLoader, SkeletonJson, SkeletonBinary, Skeleton as SpineSkeleton, AnimationState, AnimationStateData, Physics, FakeTexture } from '@esotericsoftware/spine-core';
+import decodeWebp, { init as initWebpDecoder } from '@jsquash/webp/decode.js';
 import { readSkeletonJson } from '../src/core/interop.js';
 import { parseAtlas, writeAtlas } from '../src/core/atlas.js';
 import { drawSkeletonGeometry, imageLookup } from '../src/core/draw.js';
 import { Pose } from '../src/core/pose.js';
-import { Workspace, createTools, readPage } from '../src/mcp/tools.js';
+import { Workspace, createTools } from '../src/mcp/tools.js';
 import { save } from '../src/mcp/edits.js';
 import { encodePng, decodePng } from '../src/mcp/png.js';
 
@@ -124,7 +125,9 @@ test('lossless WebP atlas is exact and usable by Spine runtime', async t => {
   const r=await exported(f,{texture_format:'webp'});
   const bytes=await fs.readFile(path.join(f.dir,'model.webp'));
   assert.equal(bytes.subarray(0,4).toString(),'RIFF');
-  const webp = await readPage(path.join(f.dir, 'model.webp'));
+  const decoderWasm = new URL('./codec/dec/webp_dec.wasm', import.meta.resolve('@jsquash/webp/decode.js'));
+  await initWebpDecoder(await WebAssembly.compile(await fs.readFile(decoderWasm)));
+  const webp = await decodeWebp(bytes);
   assert.deepEqual([webp.width, webp.height], [png.width, png.height]);
   assert.deepEqual(Buffer.from(webp.data), Buffer.from(png.data));
   for (let i = 0; i < webp.data.length; i += 4)
