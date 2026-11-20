@@ -26,6 +26,11 @@
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/Yqh1_XLBHsU"><img src="https://img.youtube.com/vi/Yqh1_XLBHsU/maxresdefault.jpg" alt="Watch the Rigby2D 0.6 Mammoth trailer on YouTube" width="720"></a><br>
+  <sub>▶ <a href="https://youtu.be/Yqh1_XLBHsU">Watch the 0.6 Mammoth trailer</a>: every shot made in Rigby2D</sub>
+</p>
+
+<p align="center">
   <a href="https://alternativeto.net/software/rigby2d/about/?utm_source=badge&utm_medium=referral"><img alt="Rigby2D on AlternativeTo" src="https://alternativeto.net/static/badges/badge-compact-dark.svg" height="80"></a><br>
   <sub>Listed on AlternativeTo next to Spine, DragonBones and Live2D</sub>
 </p>
@@ -40,12 +45,13 @@
     <td align="center" width="104"><a href="runtimes/cocos/README.md"><img src="docs/images/engines/cocos.svg" width="56" height="56" alt="Cocos Creator"><br><b>Cocos Creator</b></a><br><sub>3.8</sub></td>
     <td align="center" width="104"><a href="runtimes/phaser/README.md"><img src="docs/images/engines/phaser.svg" width="56" height="56" alt="Phaser"><br><b>Phaser</b></a><br><sub>3.60+ · 4</sub></td>
     <td align="center" width="104"><a href="runtimes/pixi/README.md"><img src="docs/images/engines/pixijs.svg" width="56" height="56" alt="PixiJS"><br><b>PixiJS</b></a><br><sub>8 · WebGPU</sub></td>
+    <td align="center" width="104"><a href="runtimes/renpy/README.md"><img src="docs/images/engines/renpy.svg" width="56" height="56" alt="Ren'Py"><br><b>Ren'Py</b></a><br><sub>8.3+</sub></td>
     <td align="center" width="104"><a href="docs/runtimes.md#javascript"><img src="docs/images/engines/javascript.svg" width="56" height="56" alt="JavaScript"><br><b>JavaScript</b></a><br><sub>any engine</sub></td>
     <td align="center" width="104"><a href="runtimes/README.md"><img src="docs/images/engines/rust.svg" width="56" height="56" alt="Rust"><br><b>Rust</b></a><br><sub>native</sub></td>
   </tr>
 </table>
 
-<p align="center"><sub>Eight free, open-source runtimes. Each plays the same animation as the editor, frame for frame.</sub></p>
+<p align="center"><sub>Nine free, open-source runtimes. Each plays the same animation as the editor, frame for frame.</sub></p>
 
 <p align="center">
   <a href="https://upstar.dev/r/jaisurya-dev-art/rigby2d">
@@ -64,13 +70,8 @@
 </p>
 
 <p align="center">
-  <a href="https://youtu.be/I9G-ZbvNlGw"><img src="docs/images/promo-0.5.jpg" alt="Watch the Rigby2D 0.5 film on YouTube" width="800"></a><br>
-  <sub>▶ <a href="https://youtu.be/I9G-ZbvNlGw">Watch <b>Rigby2D 0.5</b></a>: everything new in 54 seconds · Also: <a href="https://youtu.be/3StZlHwZeSo">Meet NILA</a>, our mascot, animated in Rigby2D</sub>
-</p>
-
-<p align="center">
-  <img src="docs/screenshot.jpg" alt="The Rigby2D editor animating NILA: viewport with her rig, bone tree, inspector and dopesheet" width="800"><br>
-  <sub>The editor animating NILA: the head bone selected in the tree, its keys in the dopesheet, its pose in the inspector.</sub>
+  <img src="docs/screenshot.jpg" alt="The Rigby2D 0.6 editor animating the Mammoth demo: viewport with its rig, tree, inspector and dopesheet" width="800"><br>
+  <sub>The 0.6 editor with the Mammoth demo: its rig in the viewport, the trumpet animation in the dopesheet, the tree and inspector docked on the right.</sub>
 </p>
 
 ## Featured in
@@ -93,40 +94,44 @@ runtimes and the MCP server. The pages are also in [`docs/`](docs/).
 
 ## Features
 
-- **AutoRig**: a layered PSD or SVG becomes an editable rig in one step: bones, joints, bending meshes and IK.
-- **Full rigging toolset**: bones, weighted meshes, linked meshes, image sequences, skins, events,
-  clipping and paths, with IK, transform, path, physics and slider constraints.
-- **Animation**: Setup and Animate modes, dopesheet, graph editor with Bézier handles, onion
-  skinning, pose library, face controls and retargeting between characters.
-- **Film workspace**: 4K, timecode, an animatable camera, audio tracks, viseme lip-sync with
-  on-device Whisper transcription, and renders to PNG sequences, WebM with alpha and MP4.
-- **Scene composition** (new in 0.3): several characters on one stage as actors with NLE-style clips
-  (trim, speed, loops, crossfades, their own audio), painted layers with parallax, and a camera,
-  and they play in games through the Godot, Unity, Defold, Cocos Creator, Phaser, PixiJS, JavaScript and Rust runtimes. See [Scenes](https://rigby2d.com/docs/scenes.html).
-- **A focused editor**: Game and Film workspaces, panels you can resize or pop out to a second
-  monitor, *Open recent*, and a searchable shortcut reference with Reference and Blender-like keys.
+- **AutoRig**: a layered PSD, SVG or Aseprite file becomes an editable rig in one step: bones, joints,
+  bending meshes and IK.
+- **An interface built on one design language**: dock any panel anywhere or into another's tabs, a Rig
+  panel, saved layouts, and themes (Rigby Dark, Mammoth, Rigby Light, or your own `.rigbytheme`).
+- **Full rigging toolset**: bones and point bones, weighted meshes with locked points and holes, linked
+  meshes, image sequences, skins, events, clipping and paths, with IK, transform, path, physics and
+  slider constraints that never jump. Test a pose or let the bone wiggle while you paint weights, and
+  move a joint after the rig is built without moving the art.
+- **2.5D turn and warp deformers**: one handle turns and tilts a head in depth, each side can be shaped
+  by hand, and nested lattices bend any mesh. All of it plays in every runtime.
+- **Animation**: Setup and Animate modes, dopesheet with tween lines, graph editor with Bézier handles,
+  onion skinning, pose library, face controls and retargeting between characters.
+- **Film workspace**: 4K, timecode, an animatable camera, audio tracks, viseme lip-sync with on-device
+  Whisper transcription, and **film effects** (drop shadow, light shading, glow, blur, colour grade,
+  particles, motion blur, depth of field), rendered on the GPU to PNG sequences, WebM with alpha and MP4.
+- **Scene composition**: several characters on one stage as actors with NLE-style clips (trim, speed,
+  loops, crossfades, their own audio), painted layers with parallax, and a camera, played in games by
+  the runtimes. See [Scenes](https://rigby2d.com/docs/scenes.html).
 - **Your work is safe**: saves that never leave a half-written file, `.rigby1` backups like Blender's
-  `.blend1`, auto-save, and crash recovery that offers unsaved work back at the next start.
-  See [Saving and recovery](https://rigby2d.com/docs/recovery.html).
-- **Preferences and add-ons**: *Edit ▸ Preferences* for the language (English, Japanese, Chinese,
-  Korean, Spanish, Portuguese), interface scale, shortcuts, undo steps, backups and auto-save, and an
-  add-on gallery for sandboxed Python add-ons that add tools.
-  See [Add-ons](https://rigby2d.com/docs/addons.html).
-- **Welcome screen, auto-update and runtimes from the editor**: new projects, recent work, starter
-  projects and lessons at startup; signed updates in the desktop app; *File ▸ Get runtimes* for Unity,
-  Godot, Defold, Cocos Creator, Phaser and PixiJS.
-- **Coming from other tools**: opens Spine exports (with a migration checker) and DragonBones
-  projects. See [Coming from Spine](https://rigby2d.com/docs/migrating-from-spine.html) and
-  [Coming from DragonBones](https://rigby2d.com/docs/migrating-from-dragonbones.html).
-- **Python scripting** and custom tools, and a built-in **MCP server** so AI assistants such as
-  Claude can inspect, rig and animate your projects.
-- **Lossless skeleton JSON (3.8, 4.2, 4.3) and binary `.skel`** (reads 4.0–4.3, writes 4.3) with texture atlases, played by the
-  **JavaScript, Phaser, PixiJS, Rust, C++ (Defold), Unity, Godot and Cocos Creator runtimes**.
+  `.blend1`, auto-save, and crash recovery. See [Saving and recovery](https://rigby2d.com/docs/recovery.html).
+- **Preferences and add-ons**: the language (English, Japanese, Chinese, Korean, Spanish, Portuguese),
+  interface scale, shortcuts with Reference and Blender-like keys, and an add-on gallery for sandboxed
+  Python add-ons. See [Add-ons](https://rigby2d.com/docs/addons.html).
+- **Coming from other tools**: opens Spine exports (with a migration checker), DragonBones projects and
+  Aseprite files (tags become animations). See [Coming from Spine](https://rigby2d.com/docs/migrating-from-spine.html)
+  and [Coming from DragonBones](https://rigby2d.com/docs/migrating-from-dragonbones.html).
+- **Automation**: Python scripting, the `rigby` command line (convert, validate, export, AutoRig and GPU
+  renders from scripts and CI, see [Command line](https://rigby2d.com/docs/cli.html)), and a built-in
+  **MCP server** so AI assistants such as Claude can inspect, rig and animate your projects.
+- **Lossless skeleton JSON (3.8, 4.2, 4.3) and binary `.skel`** (reads 4.0–4.3, writes 4.3) with texture atlases, played by nine
+  runtimes: **JavaScript, Phaser, PixiJS, Rust, C++ (Defold), Unity, Godot, Cocos Creator and Python
+  (Ren'Py)**, all checked frame by frame against the editor. *File ▸ Get runtimes* installs them.
 - **Sprite sheets** for engines that play frames: packed with TexturePacker/Aseprite-style JSON, a
-  Defold atlas, or PNG frames, with loops that join up (also from the MCP server).
-- Built-in **tutorials** and demo projects (**NILA**, **Rigbytron**, and a **scene** with both), also on the
-  [Demos page](https://rigby2d.com/demos/) with their game-ready exports
-  (demo content © Rigby2D, under its own [demo license](branding/DEMO-LICENSE.md)).
+  Defold atlas, or PNG frames, with loops that join up.
+- **Welcome screen, tutorials and demos**: lessons in the app, signed auto-updates on the desktop, and
+  demo projects (the **Mammoth**, **NILA**, **Rigbytron** and a **scene** with both), also on the
+  [Demos page](https://rigby2d.com/demos/) with their game-ready exports (demo content © Rigby2D,
+  under its own [demo license](branding/DEMO-LICENSE.md)).
 
 ## Getting started
 
@@ -157,7 +162,7 @@ src/core/       Runtime: data model, skeleton JSON/.skel + atlas I/O, pose evalu
 src/editor/     Editor UI: viewport, tree, inspector, dopesheet, graph editor, import/export, scripting
 src/webgl/      Reference WebGL renderer for the runtime
 src/mcp/        Model Context Protocol server for AI assistants
-runtimes/       Rust, C++ (Defold), Godot, Unity, Cocos Creator, Phaser and PixiJS runtimes
+runtimes/       Rust, C++ (Defold), Godot, Unity, Cocos Creator, Phaser, PixiJS and Ren'Py runtimes
 site/           Website and documentation site (GitHub Pages)
 docs/           Documentation pages and images
 branding/       Logo, icons, Rigbytron and NILA (proprietary, see TRADEMARKS.md)

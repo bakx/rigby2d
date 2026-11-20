@@ -14,13 +14,17 @@ the Rigby2D name, logos or other brand assets.
   including the demo projects that show it.
 - **NILA**, the Rigby2D female mascot: her name, character design, artwork, voice and animation (the
   files in [`branding/nila/`](branding/nila/)), including the NILA demo project and the promo film.
+- The copies of NILA and Rigbytron in the runtime demos (for example `runtimes/renpy/demo/game/images/`
+  and `runtimes/defold/assets/`), with NILA's voice lines and the demo backgrounds made from the scene
+  demo.
 - The scene demo (`branding/scene/` and its export in `runtimes/godot/demo/scene/`), with its
   painted backgrounds.
+- The Mammoth demo (`branding/mammoth/`), its character artwork and the film made with it.
 - Any other branding that identifies Rigby2D as the source of a product.
 
 These are trademarks and brand assets of the Rigby2D project. All rights reserved.
 
-The demo projects (NILA, Rigbytron and the scene demo) may be used to learn, evaluate and teach
+The demo projects (NILA, Rigbytron, the scene demo and the Mammoth) may be used to learn, evaluate and teach
 Rigby2D under the [Rigby2D Demo Content License](branding/DEMO-LICENSE.md), which is included in every
 demo download.
 
