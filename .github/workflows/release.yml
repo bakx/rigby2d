@@ -230,7 +230,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run build -- --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":true}}'; else npm run build -- --target universal-apple-darwin --bundles dmg; fi
+          set -o pipefail
+          log="$(mktemp)"
+          for attempt in 1 2 3; do
+            if { if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run build -- --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":true}}'; else npm run build -- --target universal-apple-darwin --bundles dmg; fi; } 2>&1 | tee "$log"; then
+              break
+            else
+              status=${PIPESTATUS[0]}
+            fi
+            if [ "$attempt" = 3 ] || ! grep -Fq 'Resource busy' "$log" || ! grep -Fq 'hdiutil:' "$log"; then exit "$status"; fi
+            echo "Disk image is busy; retrying the macOS bundle (attempt $((attempt + 1))/3)."
+            sleep 20
+          done
       - name: Godot runtime (universal library)
         working-directory: runtimes/rust
         run: |
