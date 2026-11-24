@@ -5,13 +5,13 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { animOf, number } from '../core/authoring.js';
-import { bakePhysics, lintAnimations, sampleTimes, simulate } from '../core/automation.js';
+import { sampleTimes, simulate } from '../core/automation.js';
 import { SoftRenderer } from '../editor/raster.js';
 import { outputFrame } from '../editor/output.js';
 import { encodeGif } from '../editor/gif.js';
 import { encodePng } from './png.js';
-import { EDIT, OUTPUT, OVERWRITE, edit } from './edits.js';
-import { PATH, READ_ONLY, loadProject, rasterLookup } from './tools.js';
+import { EDIT, OVERWRITE } from './edits.js';
+import { PATH, loadProject, rasterLookup } from './tools.js';
 import { ToolError } from './protocol.js';
 
 const str = { type: 'string' }, num = { type: 'number' }, bool = { type: 'boolean' };
@@ -184,21 +184,6 @@ export function createRenderingTools(ws) {
         }
       },
     },
-    {
-      name: 'lint_animations', title: 'Lint animations', description: 'Report loop seams, large frame jumps, missing/hidden attachments, pinned IK targets and keys overridden by IK. Loop detection defaults to idle/breathe/walk/run/loop names; set loop explicitly for other clips. Warnings do not make a structurally valid project invalid.',
-      inputSchema: { type: 'object', properties: { path: PATH, animation: str, loop: bool, fps, jump_threshold: { ...num, minimum: 0 }, rotation_threshold: { ...num, minimum: 0 } }, required: ['path'], additionalProperties: false }, annotations: READ_ONLY,
-      handler: async (args) => { const p = await loadProject(await ws.existing(args.path)); return { warnings: lintAnimations(p.doc, args) }; },
-    },
-  ];
-}
 
-export function bakeTool(ws) {
-  const base = { path: PATH, animation: str };
-  const tool = {
-    name: 'bake_physics', title: 'Bake physics', description: 'Simulate physics and replace affected bone channels with sampled keys. By default disables the selected physics constraints in this clip only. loop settles one period and closes the last key. Refuses bones also driven by another constraint type.',
-    inputSchema: { type: 'object', properties: { ...base, constraints: { type: 'array', items: str, minItems: 1 }, fps, loop: bool, disable: bool, output: OUTPUT, overwrite: OVERWRITE }, required: ['path', 'animation'], additionalProperties: false }, annotations: EDIT,
-    apply: (doc, args) => bakePhysics(doc, args),
-  };
-  tool.handler = (args) => edit(ws, args, (doc) => tool.apply(doc, args));
-  return tool;
+  ];
 }

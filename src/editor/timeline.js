@@ -16,7 +16,7 @@ import { button, dialog, iconButton, segmented, toggleButton, uiIcon } from './u
 // selection round trip can be tested in Node). Re-exported here so the windows import them as before.
 import { tracks, trackKeys, tweenSpans } from './keyorder.js';
 import { drawLanes, laneActors, pressLane } from './sceneui.js';
-import { t, tn } from './i18n.js';
+import { statusMessage, t, tn } from './i18n.js';
 import { FPS_PRESETS, formatFps } from './output.js';
 import { shortcutLabel, withShortcut } from './keymap.js';
 import { canvasColor } from './canvascolors.js';
@@ -224,7 +224,7 @@ export function deleteSelectedKeys(app) {
   const count = app.selectedKeys.size;
   app.selectedKeys.clear();
   anim.prune();
-  app.setStatus(count === 1 ? t('Deleted 1 key') : t('Deleted {count} keys', { count }));
+  app.setStatus(count === 1 ? statusMessage('Deleted 1 key') : statusMessage('Deleted {count} keys', { count }));
 }
 
 // ---- copy and paste ---------------------------------------------------------------------------
@@ -299,7 +299,7 @@ function endCopyArming() {
 /** Copies the selected keys, then deletes them. */
 export function cutSelectedKeys(app) {
   if (!app.currentAnimation() || !app.selectedKeys.size) {
-    app.setStatus(t('Select keys to cut'));
+    app.setStatus(statusMessage('Select keys to cut'));
     return;
   }
   copySelectedKeys(app);
@@ -310,7 +310,7 @@ export function cutSelectedKeys(app) {
 export function copySelectedKeys(app) {
   const anim = app.currentAnimation();
   if (!anim || !app.selectedKeys.size) {
-    app.setStatus(t('Select keys to copy'));
+    app.setStatus(statusMessage('Select keys to copy'));
     return;
   }
   const groups = [];
@@ -359,7 +359,7 @@ export function copySelectedKeys(app) {
   multiAdd = false;
   clearRegions(); // the copy snapshotted them; the next selection gesture starts fresh
   const n = clipboard?.count ?? 0;
-  app.setStatus(t('Copied {count} key(s): move the playhead and paste (Ctrl+V), or press Escape to cancel', { count: n }));
+  app.setStatus(statusMessage('Copied {count} key(s): move the playhead and paste (Ctrl+V), or press Escape to cancel', { count: n }));
 }
 
 /** The dopesheet track id a copied track has in `anim` now (its row, if it has one). */
@@ -421,7 +421,7 @@ export function retimeArmedActive() {
 /** Arms (or disarms) the retiming handles. They scale the selected keys' timing, then disarm. */
 export function toggleRetime(app) {
   retimeArmed = !retimeArmed;
-  app.setStatus(retimeArmed ? t('Retime: drag an end of the selected range to scale its timing (one use). Right-drag works anytime.') : t('Retime off.'));
+  app.setStatus(retimeArmed ? statusMessage('Retime: drag an end of the selected range to scale its timing (one use). Right-drag works anytime.') : statusMessage('Retime off.'));
 }
 
 /** Records a selection area so the copy preview can colour each copied section on its own. */
@@ -448,7 +448,7 @@ export function frameSelectActive() {
 export function toggleFrameSelect(app) {
   frameSelect = !frameSelect;
   if (frameSelect) endCopyArming(); // re-arming a column selection drops any pending copy
-  app.setStatus(frameSelect ? t('Frame columns: drag (or Alt+drag) to select; Alt or Multi add more.') : t('Key select: drag a box over the keys.'));
+  app.setStatus(frameSelect ? statusMessage('Frame columns: drag (or Alt+drag) to select; Alt or Multi add more.') : statusMessage('Key select: drag a box over the keys.'));
 }
 
 /** Whether multi-region add is on (drives the Multi button). */
@@ -460,7 +460,7 @@ export function multiAddActive() {
 export function toggleMultiAdd(app) {
   multiAdd = !multiAdd;
   if (multiAdd) endCopyArming();
-  app.setStatus(multiAdd ? t('Multi-select: each drag adds another area. Copy or Escape to finish.') : t('Single select.'));
+  app.setStatus(multiAdd ? statusMessage('Multi-select: each drag adds another area. Copy or Escape to finish.') : statusMessage('Single select.'));
 }
 
 /** The paste mode's button label (changes as it cycles). */
@@ -477,9 +477,9 @@ export function pasteModeActive() {
 export function cyclePasteMode(app) {
   pasteMode = PASTE_MODES[(PASTE_MODES.indexOf(pasteMode) + 1) % PASTE_MODES.length];
   const msg = {
-    none: t('Paste merges: existing keys between the pasted ones are kept.'),
-    overwrite: t('Paste overwrites: clears existing keys in the pasted area, in the copied tracks.'),
-    full: t('Paste overwrites all: clears the whole pasted area, even tracks with no copied key.'),
+    none: statusMessage('Paste merges: existing keys between the pasted ones are kept.'),
+    overwrite: statusMessage('Paste overwrites: clears existing keys in the pasted area, in the copied tracks.'),
+    full: statusMessage('Paste overwrites all: clears the whole pasted area, even tracks with no copied key.'),
   };
   app.setStatus(msg[pasteMode]);
 }
@@ -497,11 +497,11 @@ export function pasteKeys(app) {
   reconcileToDocument(app); // never paste the old project's keys if a new one was opened (e.g. in graph view)
   const anim = app.currentAnimation();
   if (!anim) {
-    app.setStatus(t('Select an animation to paste into'));
+    app.setStatus(statusMessage('Select an animation to paste into'));
     return;
   }
   if (!clipboard) {
-    app.setStatus(t('Nothing to paste: copy keys first (Ctrl+C)'));
+    app.setStatus(statusMessage('Nothing to paste: copy keys first (Ctrl+C)'));
     return;
   }
   const pasteTime = snap(app.time);
@@ -516,7 +516,7 @@ export function pasteKeys(app) {
       applyPaste(app, anim, pasteTime, { mode: 'all' });
     },
     clip: () => applyPaste(app, anim, pasteTime, { mode: 'clip', limit: anim.duration }),
-    cancel: () => app.setStatus(t('Paste cancelled')),
+    cancel: () => app.setStatus(statusMessage('Paste cancelled')),
   });
 }
 
@@ -547,7 +547,7 @@ function applyPaste(app, anim, pasteTime, opts) {
   clearRegions(); // and the next selection gesture starts fresh, not adding to the pasted area
   app.selectedKeys = new Set(pasted); // select what was pasted, ready to nudge
   const n = pasted.length;
-  app.setStatus(n ? t('Pasted {count} key(s) at frame {frame}', { count: n, frame: Math.round(pasteTime * FPS) }) : t('Nothing pasted (no keys fit)'));
+  app.setStatus(n ? statusMessage('Pasted {count} key(s) at frame {frame}', { count: n, frame: Math.round(pasteTime * FPS) }) : statusMessage('Nothing pasted (no keys fit)'));
   app.changed();
 }
 
@@ -589,6 +589,13 @@ export class Dopesheet {
     this.scroller = scroller;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    // The canvas covers only the visible part of the scroller (sticky at its top) and draws the rows
+    // shifted by the scroll; a spacer below it gives the scroller its full height. A canvas as tall as
+    // every row (thousands of pixels at high DPI) was re-uploaded on each frame.
+    canvas.style.position = 'sticky';
+    canvas.style.top = '0';
+    this.spacer = document.createElement('div');
+    scroller.appendChild(this.spacer);
     this.keyRects = [];
     this.layout = null;
     this.press = null;
@@ -631,14 +638,18 @@ export class Dopesheet {
     const width = Math.max(1, this.scroller.clientWidth);
     const height = Math.max(top + Math.max(rows.length, 1) * ROW + 6, this.scroller.clientHeight);
     const dpr = window.devicePixelRatio || 1;
+    const viewH = Math.max(1, Math.min(height, this.scroller.clientHeight || height));
+    const scrollY = Math.max(0, Math.min(this.scroller.scrollTop, height - viewH));
     this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
-    if (this.canvas.width !== Math.round(width * dpr) || this.canvas.height !== Math.round(height * dpr)) {
+    this.canvas.style.height = `${viewH}px`;
+    const spacerH = `${height - viewH}px`;
+    if (this.spacer.style.height !== spacerH) this.spacer.style.height = spacerH;
+    if (this.canvas.width !== Math.round(width * dpr) || this.canvas.height !== Math.round(viewH * dpr)) {
       this.canvas.width = Math.round(width * dpr);
-      this.canvas.height = Math.round(height * dpr);
+      this.canvas.height = Math.round(viewH * dpr);
     }
     const ctx = this.ctx;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, -scrollY * dpr); // draw in content coordinates
     ctx.fillStyle = canvasColor('--tl-bg', 'rgb(30,30,30)');
     ctx.fillRect(0, 0, width, height);
 
@@ -713,36 +724,34 @@ export class Dopesheet {
       ctx.rect(trackLeft - 7, RULER, width - trackLeft + 7, height);
       ctx.clip();
     }
-    // Tween lines: a thin line from each key to the next where the values blend (under the diamonds).
-    if (app.tweenLines) {
+    // Tween lines and key diamonds. While playing only the time moves, so this layer is drawn once into
+    // an offscreen canvas and reused until anything it depends on changes; otherwise it is drawn live.
+    const layerKey = app.playing
+      ? [app.docEpoch, app.version, app.anim, scrollY, width, viewH, dpr, t0, viewSpan, top, rows.length,
+          app.selectedKeys.size, copiedSource?.size ?? 0, !!app.tweenLines, tlText(), keyFill(false, LINEAR)].join('|')
+      : null;
+    if (layerKey === null || this.keyLayer?.key !== layerKey) {
+      const live = layerKey === null;
+      let layerCtx = ctx;
+      if (!live) {
+        const canvas = this.keyLayer?.canvas ?? document.createElement('canvas');
+        if (canvas.width !== this.canvas.width || canvas.height !== this.canvas.height) [canvas.width, canvas.height] = [this.canvas.width, this.canvas.height];
+        layerCtx = canvas.getContext('2d');
+        layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+        layerCtx.clearRect(0, 0, canvas.width, canvas.height);
+        layerCtx.setTransform(dpr, 0, 0, dpr, 0, -scrollY * dpr);
+        this.keyLayer = { key: layerKey, canvas };
+      } else this.keyLayer = null;
+      this.drawKeyLayer(layerCtx, { app, anim, rows, top, trackLeft, trackW, timeToX });
+      if (!live) this.keyLayer.rects = this.keyRects;
+    }
+    if (this.keyLayer) {
+      this.keyRects = this.keyLayer.rects;
       ctx.save();
-      ctx.strokeStyle = tlText();
-      ctx.globalAlpha = 0.45;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      rows.forEach(({ track }, r) => {
-        const keys = trackKeys(anim, track);
-        const y = Math.round(top + r * ROW + ROW / 2) + 0.5;
-        for (const [a, b] of tweenSpans(track, keys)) {
-          const x0 = timeToX(keys[a].time ?? 0) + 6;
-          const x1 = timeToX(keys[b].time ?? 0) - 6;
-          if (x1 - x0 < 2) continue;
-          ctx.moveTo(x0, y);
-          ctx.lineTo(x1, y);
-        }
-      });
-      ctx.stroke();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(this.keyLayer.canvas, 0, 0);
       ctx.restore();
     }
-    rows.forEach(({ track }, r) => {
-      const y = top + r * ROW;
-      (trackKeys(anim, track) ?? []).forEach((k, index) => {
-        const c = [timeToX(k.time), y + ROW / 2];
-        const fill = copiedSource?.has(k) ? 'rgb(60,220,110)' : keyFill(app.selectedKeys.has(k), k.curve);
-        diamond(ctx, c, 5.5, fill);
-        this.keyRects.push({ x0: c[0] - 6, x1: c[0] + 6, y0: c[1] - 7, y1: c[1] + 7, key: k, keys: trackKeys(anim, track), index, time: k.time });
-      });
-    });
     ctx.strokeStyle = canvasColor('--tl-line', 'rgb(60,60,60)');
     ctx.beginPath();
     ctx.moveTo(trackLeft + 0.5, 0);
@@ -958,9 +967,65 @@ export class Dopesheet {
     this.app.changed();
   }
 
+  /** Tween lines and key diamonds (see draw), filling this.keyRects. */
+  drawKeyLayer(ctx, { app, anim, rows, top, trackLeft, trackW, timeToX }) {
+    // Tween lines: a thin line from each key to the next where the values blend (under the diamonds).
+    if (app.tweenLines) {
+      ctx.save();
+      ctx.strokeStyle = tlText();
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      rows.forEach(({ track }, r) => {
+        const keys = trackKeys(anim, track);
+        const y = Math.round(top + r * ROW + ROW / 2) + 0.5;
+        for (const [a, b] of tweenSpans(track, keys)) {
+          const x0 = timeToX(keys[a].time ?? 0) + 6;
+          const x1 = timeToX(keys[b].time ?? 0) - 6;
+          if (x1 - x0 < 2) continue;
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x1, y);
+        }
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Diamonds are drawn only for rows scrolled into view and keys inside the time window, one path per
+    // colour, and once per pixel column (dense tracks put many keys on the same spot). Hit rects are kept
+    // for every key, as before. With tens of thousands of keys this was most of the frame time.
+    const visTop = this.scroller.scrollTop - ROW, visBottom = this.scroller.scrollTop + this.scroller.clientHeight + ROW;
+    const xMin = trackLeft - 8, xMax = trackLeft + trackW + 8;
+    const byFill = new Map(); // fill -> flat [x, y, x, y, ...]
+    let selectedFills = null;
+    rows.forEach(({ track }, r) => {
+      const y = top + r * ROW;
+      const cy = y + ROW / 2;
+      const keys = trackKeys(anim, track) ?? [];
+      const visible = y + ROW >= visTop && y <= visBottom;
+      let lastX = -Infinity, lastFill = null;
+      keys.forEach((k, index) => {
+        const x = timeToX(k.time);
+        this.keyRects.push({ x0: x - 6, x1: x + 6, y0: cy - 7, y1: cy + 7, key: k, keys, index, time: k.time });
+        if (!visible || x < xMin || x > xMax) return;
+        const selected = app.selectedKeys.has(k);
+        const fill = copiedSource?.has(k) ? 'rgb(60,220,110)' : keyFill(selected, k.curve);
+        if (fill === lastFill && x - lastX < 1) return; // same colour on the same pixel: already drawn
+        lastX = x;
+        lastFill = fill;
+        if (selected) (selectedFills ??= new Set()).add(fill);
+        let pts = byFill.get(fill);
+        if (!pts) byFill.set(fill, (pts = []));
+        pts.push(x, cy);
+      });
+    });
+    // Selected (and copied) colours last, so they sit on top as when each key was drawn in order.
+    const fills = [...byFill.keys()].sort((a, b) => (selectedFills?.has(a) ? 1 : 0) - (selectedFills?.has(b) ? 1 : 0));
+    for (const fill of fills) diamonds(ctx, byFill.get(fill), 5.5, fill);
+  }
+
   pos(e) {
-    const r = this.canvas.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    const r = this.canvas.getBoundingClientRect(); // the sticky canvas shows the rows from scrollTop down
+    return [e.clientX - r.left, e.clientY - r.top + this.scroller.scrollTop];
   }
 
   hit(p) {
@@ -1005,8 +1070,8 @@ export class Dopesheet {
       }
     }
     app.selectedKeys = next;
-    const span = from === to ? t('frame {frame}', { frame: from }) : t('frames {from}–{to}', { from, to });
-    app.setStatus(t('Selected {span}: {count} key(s)', { span, count: next.size }));
+    const span = from === to ? statusMessage('frame {frame}', { frame: from }) : statusMessage('frames {from}–{to}', { from, to });
+    app.setStatus(statusMessage('Selected {span}: {count} key(s)', { span, count: next.size }));
   }
 
   /** Time range covered by the selected keys, or null. */
@@ -1197,7 +1262,7 @@ export class Dopesheet {
       } else if (press.retime) {
         resortAnimation(app.currentAnimation());
         clearRegions();
-        app.setStatus(t('Retimed {count} key(s)', { count: app.selectedKeys.size }));
+        app.setStatus(statusMessage('Retimed {count} key(s)', { count: app.selectedKeys.size }));
       } else if (press.selectColumns) {
         // Right-drag over nothing to retime: select the swept columns and arm the handles so the very
         // next drag of an end scales them.
@@ -1210,7 +1275,7 @@ export class Dopesheet {
         this.selectFrames(from, to, false);
         setRegion({ f0: from, f1: to, r0: 0, r1: 0, full: true }, false);
         retimeArmed = true;
-        app.setStatus(t('Retime: drag an end of the marked range to scale it.'));
+        app.setStatus(statusMessage('Retime: drag an end of the marked range to scale it.'));
       }
       app.changed();
       return;
@@ -1268,7 +1333,7 @@ export class Dopesheet {
       clearRegions(); // the keys moved; a copy would re-derive its band from the new positions
       if (press.retime) retimeArmed = false; // one-shot: the armed handles switch off after a retime
       const n = app.selectedKeys.size;
-      app.setStatus(press.move ? t('Moved {count} key(s)', { count: n }) : t('Retimed {count} key(s)', { count: n }));
+      app.setStatus(press.move ? statusMessage('Moved {count} key(s)', { count: n }) : statusMessage('Retimed {count} key(s)', { count: n }));
     } else if (press.box) {
       const { from, to } = press.box;
       const [x0, x1] = [Math.min(from[0], to[0]), Math.max(from[0], to[0])];
@@ -1284,7 +1349,7 @@ export class Dopesheet {
       const reg = this.boxRegion(x0, y0, x1, y1);
       if (inside.length && reg) setRegion(reg, press.add);
       else if (!press.add) clearRegions();
-      app.setStatus(t('{count} key(s) selected', { count: next.size }));
+      app.setStatus(statusMessage('{count} key(s) selected', { count: next.size }));
     }
     app.changed();
   }
@@ -1395,6 +1460,24 @@ function diamond(ctx, c, r, fill) {
   ctx.lineTo(c[0], c[1] + r);
   ctx.lineTo(c[0] - r, c[1]);
   ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+/** Many diamonds of one colour in one path: `pts` is a flat [x, y, x, y, ...] list of centres. */
+function diamonds(ctx, pts, r, fill) {
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i += 2) {
+    const x = pts[i], y = pts[i + 1];
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+  }
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.strokeStyle = 'black';

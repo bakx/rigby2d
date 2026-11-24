@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// The PixiJS runtime (runtimes/pixi): skeletons draw as PixiJS meshes holding exactly the triangles
+// The PixiJS runtime (runtimes/pixi, TypeScript): skeletons draw as PixiJS meshes holding exactly the triangles
 // the JavaScript runtime makes, batched by texture, blend and tint; physics can follow the object's
 // movement without changing what a still skeleton draws; skins are per object; bones carry children.
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-
-import * as PIXI from 'pixi.js';
+import { tsImport } from 'tsx/esm/api';
 
 import { drawSkeletonGeometry, Pose, AnimationState } from '../src/core/index.js';
-import { rigbyPixi } from '../runtimes/pixi/rigby-pixi.js';
+import { basisModule, encodeKtx2 } from '../src/core/ktx2.js';
+
+// PixiJS probes the user agent during import, and Node 20 has no navigator.
+globalThis.navigator ??= { userAgent: '' };
+const PIXI = await import('pixi.js');
+const { rigbyPixi } = await tsImport('../runtimes/pixi/rigby-pixi.ts', import.meta.url);
 
 // No browser here: shader programs probe a canvas for precision; give them one without WebGL.
 PIXI.DOMAdapter.set({ ...PIXI.DOMAdapter.get(), createCanvas: () => ({ getContext: () => null }) });
@@ -21,6 +25,33 @@ const read = (p) => fs.readFileSync(new URL(`../branding/${p}`, import.meta.url)
 /** Fresh data each time (tests change it), with one PixiJS texture per atlas page. */
 const nilaData = () => parseRigby(new Uint8Array(read('nila/export/nila.skel')), read('nila/export/nila.atlas').toString(), () => PIXI.Texture.WHITE);
 const robotData = () => parseRigby(read('rigbytron/export/rigbytron.json').toString(), read('rigbytron/export/rigbytron.atlas').toString(), () => PIXI.Texture.WHITE);
+
+test('typed Pixi runtime loads KTX2 pages and their PNG fallback', async () => {
+  // Node tools install the Basis encoder/transcoder used for this generated fixture.
+  await import('../src/mcp/tools.js');
+  const pixels = new Uint8Array(4 * 4 * 4).fill(255);
+  const bytes = await encodeKtx2({ width: 4, height: 4, data: pixels }, { pma: true });
+  const basis = await basisModule();
+  const skeleton = read('rigbytron/export/rigbytron.json').toString();
+  const atlas = read('rigbytron/export/rigbytron.atlas').toString().replace(/^(.*\.png)$/m, 'page.ktx2');
+  const urls = [];
+  const fetch = async (url) => {
+    urls.push(url);
+    if (url.endsWith('.json')) return { ok: true, arrayBuffer: async () => new TextEncoder().encode(skeleton).buffer };
+    if (url.endsWith('.atlas')) return { ok: true, text: async () => atlas };
+    if (url.endsWith('.ktx2')) return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+    if (url.endsWith('.png')) return { ok: true, url };
+    return { ok: false, status: 404 };
+  };
+  const pixi = { ...PIXI, DOMAdapter: { get: () => ({ fetch }) }, Assets: { load: async () => PIXI.Texture.WHITE }, getSupportedCompressedTextureFormats: async () => [] };
+  const runtime = rigbyPixi(pixi);
+  const fallback = await runtime.loadRigby('https://example.test/fallback.json', 'https://example.test/fallback.atlas');
+  assert.equal(fallback.pages.get('page.ktx2'), PIXI.Texture.WHITE);
+  assert.ok(urls.some((url) => url.endsWith('page.png')));
+  const loaded = await runtime.loadRigby('https://example.test/native.json', 'https://example.test/native.atlas', { ktx2: basis });
+  assert.equal(loaded.pages.get('page.ktx2').source.width, 4);
+  assert.equal(loaded.pages.get('page.ktx2').source.height, 4);
+});
 
 /** Every visible mesh's triangles, flattened to world-space triangle corners (PixiJS axes). */
 function meshTriangles(sk) {

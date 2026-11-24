@@ -14,7 +14,7 @@ import { EDIT, OUTPUT, OVERWRITE, edit, save } from './edits.js';
 import { alphaOf as alphaChannel, decodePng, encodePng } from './png.js';
 import { ToolError } from './protocol.js';
 import { PATH, READ_ONLY, loadProject } from './tools.js';
-import { CUTOUT, cutoutArgs, readImageFile } from './authoring.js';
+import { CUTOUT, cutoutArgs, readImageFile } from './authoring-extra.js';
 import { cutout } from '../core/cutout.js';
 
 const PSD = { type: 'string', description: 'Layered artwork (.psd) inside the workspace, one layer per body part. Instead of path.' };

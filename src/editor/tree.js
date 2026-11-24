@@ -13,9 +13,10 @@ import { onionBonePanel, rgbCss } from './onionui.js';
 import { createEvent, createSkin } from './skineventui.js';
 import { h, popupMenu } from './widgets.js';
 import { button, iconButton, uiIcon } from './ui.js';
+import { isBoneHidden, isBoneLocked, isSlotHidden, isSlotLocked, toggleBone, toggleSlot } from './visibility.js';
 import { has } from './workspaces.js';
 import { addActorMenu, sceneRows } from './sceneui.js';
-import { t } from './i18n.js';
+import { joinStatus, statusMessage, t, tn } from './i18n.js';
 
 /** Collapsed sections and bones (kept for the session). */
 const collapsed = new Set(['images', 'events']);
@@ -71,6 +72,31 @@ export const label = (iconName, text, faint = false) => [h('span', { class: `row
 /** A fold toggle: chevron right (folded) or down (open), with an optional count. */
 const chevron = (open, count = null) => [uiIcon(open ? 'chevron-down' : 'chevron-right', 'sm'), count !== null ? h('span', { class: 'twisty-count' }, String(count)) : null];
 
+/**
+ * A row's eye or lock toggle (`kind` 'hidden' or 'locked'), shown on hover and always while on.
+ * `toggle(e)` flips it (Alt+click on a bone: its whole branch).
+ */
+function viewToggle(kind, on, toggle, branchHint) {
+  const hide = kind === 'hidden';
+  const title = hide ? (on ? t('Show in the viewport') : t('Hide in the viewport')) : on ? t('Unlock: pick it in the viewport again') : t('Lock: the viewport no longer picks it');
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: `view-toggle${on ? ' on' : ''}`,
+      'aria-pressed': on ? 'true' : 'false',
+      'aria-label': title,
+      title: branchHint ? `${title}
+${t('Alt+click: the whole branch')}` : title,
+      onclick: (e) => {
+        e.stopPropagation();
+        toggle(e);
+      },
+    },
+    uiIcon(hide ? (on ? 'eye-off' : 'eye') : on ? 'lock' : 'lock-open', 'sm'),
+  );
+}
+
 /** A section's add button (ghost, with a plus). */
 export const addButton = (text, { title, disabled = false, onclick }) => button(text, { kind: 'ghost', size: 'sm', icon: 'plus', title, disabled, onclick });
 
@@ -84,6 +110,20 @@ export function row(label, { depth = 0, selected = false, cls = '', onclick, ext
     attrs.onmouseleave = () => treeApp?.setHover(null);
   }
   return h('div', attrs, label, extra);
+}
+
+/** Draws a connector at each ancestor with remaining siblings, then an elbow to this row. */
+function skeletonRow(label, options, branches) {
+  const item = row(label, { ...options, depth: branches.length });
+  if (!branches.length) return item;
+  item.classList.add('with-branches');
+  const last = branches.length - 1;
+  item.prepend(h('span', { class: 'tree-branches', 'aria-hidden': 'true' }, branches.map((continues, level) => {
+    if (!continues && level !== last) return null;
+    const cls = level === last ? ` elbow${continues ? '' : ' end'}` : '';
+    return h('span', { class: `tree-branch${cls}`, style: `--branch-level: ${level}` });
+  })));
+  return item;
 }
 
 /** The selection the tree last showed, so a new one (from the viewport, say) is revealed once. */
@@ -175,9 +215,8 @@ export function render(app, el) {
     if (!childrenOf.has(b.parent)) childrenOf.set(b.parent, []);
     childrenOf.get(b.parent).push(i);
   });
-  const visit = (bone, depth) => {
-    if (keep && !keep.has(bone)) return;
-    const kids = childrenOf.get(bone) ?? [];
+  const visit = (bone, branches) => {
+    const kids = (childrenOf.get(bone) ?? []).filter((child) => !keep || keep.has(child));
     const slots = (slotsOf.get(bone) ?? []).filter(([s]) => !keep || named(s) || named(doc.bones[bone]));
     const key = `bone:${bone}`;
     const hasChildren = kids.length || slots.length;
@@ -226,20 +265,27 @@ export function render(app, el) {
           uiIcon('layers', 'sm'),
         )
       : null;
-    const boneRow = row(label(doc.bones[bone].length > 0 ? 'bone' : 'crosshair', doc.bones[bone].name), {
+    const boneHidden = isBoneHidden(doc, bone);
+    const boneToggles = ['hidden', 'locked'].map((kind) =>
+      viewToggle(kind, kind === 'hidden' ? boneHidden : isBoneLocked(doc, bone), (e) => {
+        toggleBone(doc, kind, bone, e.altKey);
+        app.changed();
+      }, true),
+    );
+    const boneRow = skeletonRow(label(doc.bones[bone].length > 0 ? 'bone' : 'crosshair', doc.bones[bone].name), {
       tut: `bone:${doc.bones[bone].name}`,
-      depth,
-      cls: q && named(doc.bones[bone]) ? 'match' : '',
+      cls: `${q && named(doc.bones[bone]) ? 'match' : ''}${boneHidden ? ' view-hidden' : ''}`,
       selected: selected.has(bone),
       // Picking a bone for a field: a click on its row answers it.
       onclick: (e) => (app.pick ? app.finishPick(bone) : select({ bone })(e)),
-      extra: [marks, onionBtn, twisty],
+      extra: [marks, onionBtn, ...boneToggles, twisty],
       bone,
-    });
+    }, branches);
     if (bone !== 0 && app.mode === Mode.Setup) dragBoneRow(app, boneRow, bone);
     skeleton.push(boneRow);
     if (!open) return;
-    for (const [slot, i] of slots) {
+    for (const [index, [slot, i]] of slots.entries()) {
+      const slotBranches = [...branches, index < slots.length - 1 || kids.length > 0];
       const names = new Set(slot.attachments.map((a) => a.name));
       if (doc.skin) for (const a of doc.skinAttachments(i, doc.skin)) names.add(a.name);
       const slotOpen = openSlots.has(slot.name);
@@ -262,34 +308,50 @@ export function render(app, el) {
       // Folded: the visible attachment's name follows the slot's.
       // (Not when it has the slot's own name, as most single-image slots do.)
       const shown = !slotOpen && pose.attachment[i] && pose.attachment[i] !== slot.name ? h('span', { class: 'slot-shown', title: t('Visible attachment') }, pose.attachment[i]) : null;
-      const slotRow = row(label('layers', slot.name), { tut: `slot:${slot.name}`, depth: depth + 1, cls: 'slot', selected: selSlot(app.sel) === i, onclick: select({ slot: i }), extra: [shown, slotTwisty] });
+      const slotHidden = isSlotHidden(doc, i);
+      const slotToggles = ['hidden', 'locked'].map((kind) =>
+        viewToggle(kind, kind === 'hidden' ? slotHidden : isSlotLocked(doc, i), () => {
+          toggleSlot(doc, kind, i);
+          app.changed();
+        }, false),
+      );
+      const slotRow = skeletonRow(label('layers', slot.name), { tut: `slot:${slot.name}`, cls: `slot${slotHidden ? ' view-hidden' : ''}`, selected: selSlot(app.sel) === i, onclick: select({ slot: i }), extra: [shown, ...slotToggles, slotTwisty] }, slotBranches);
       slotRow.dataset.slot = String(i);
       skeleton.push(slotRow);
       if (!slotOpen) continue;
-      for (const name of names) {
+      for (const [index, name] of [...names].entries()) {
         const visible = pose.attachment[i] === name;
         skeleton.push(
-          row(label('image', name, !visible), {
-            depth: depth + 2,
+          skeletonRow(label('image', name, !visible), {
             cls: `attachment${visible ? ' visible' : ''}`,
             title: visible ? t('Visible attachment') : t('Click to show this attachment (keys it in Animate mode)'),
             onclick: () => {
               app.select({ slot: i });
               edit.setSlotAttachment(app, i, visible ? null : name);
             },
-          }),
+          }, [...slotBranches, index < names.size - 1]),
         );
       }
     }
-    for (const c of kids) visit(c, depth + 1);
+    kids.forEach((child, index) => visit(child, [...branches, index < kids.length - 1]));
   };
-  visit(0, 0);
+  if (!keep || keep.has(0)) visit(0, []);
   const addBone = addButton(t('Bone'), { disabled: app.mode !== Mode.Setup, title: t('Add a child bone to the selected bone'), onclick: () => edit.addChildBone(app, selBone(app.sel) ?? 0) });
   const addPoint = addButton(t('Point'), {
     disabled: app.mode !== Mode.Setup,
     title: t('Add a point bone (a pivot or anchor) at the tip of the selected bone'),
     onclick: () => edit.addPointBone(app, selBone(app.sel) ?? 0),
   });
+
+  // Fold every bone (the top level stays listed, e.g. each plant of a scene) or unfold them all.
+  const foldAll = (fold) => () => {
+    collapsed.delete('skeleton');
+    for (const k of [...collapsed]) if (k.startsWith('bone:')) collapsed.delete(k);
+    if (fold) doc.bones.forEach((_, i) => i !== 0 && collapsed.add(`bone:${i}`));
+    app.changed();
+  };
+  const collapseAll = iconButton('chevrons-down-up', { size: 'sm', title: t('Collapse all bones'), onclick: foldAll(true) });
+  const expandAll = iconButton('chevrons-up-down', { size: 'sm', title: t('Expand all bones'), onclick: foldAll(false) });
 
   // Draw order: front of the list is drawn on top.
   const n = doc.slots.length;
@@ -370,7 +432,7 @@ export function render(app, el) {
       has(app, 'scene') || doc.scene?.actors.length
         ? section(app, 'scene', t('Scene'), doc.scene?.actors.length ?? 0, doc.scene?.actors.length ? sceneRows(app, row) : [h('div', { class: 'small weak pad' }, t('Characters acting together: + Actor adds one (File ▸ New ▸ Scene starts a stage with a camera).'))], addButton(t('Actor'), { title: t('Add a character to the scene'), onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); addActorMenu(app, r.left, r.bottom); } }))
         : null,
-      rootDropTarget(section(app, 'skeleton', doc.name || t('Skeleton'), doc.bones.length, skeletonBody, [addBone, addPoint])),
+      rootDropTarget(section(app, 'skeleton', doc.name || t('Skeleton'), doc.bones.length, skeletonBody, [collapseAll, expandAll, addBone, addPoint])),
       section(app, 'draworder', t('Draw order'), n, orderList),
       // With the Rig panel open (rigpanel.js), skins, constraints and events are listed there instead.
       app.rigPanel ? null : skinsSection(app),
@@ -452,23 +514,26 @@ export function newConstraint(app, type) {
   // Transform: the selected bones follow a driver, the last one selected, or picked next.
   if (type === 'transform') {
     const bones = app.selectedBones();
-    if (!bones.length) return app.setStatus(t('Select the bones that should follow (Ctrl+click for several), then add the constraint'));
+    if (!bones.length) return app.setStatus(statusMessage('Select the bones that should follow (Ctrl+click for several), then add the constraint'));
     const finish = (driven, driver) => {
       const names = createTransform(app, driven, driver);
-      if (!names.length) return app.setStatus(t('A bone cannot drive itself'));
+      if (!names.length) return app.setStatus(statusMessage('A bone cannot drive itself'));
       app.sel = { constraint: names[0] };
       app.multi.clear();
-      app.setStatus(t('{driven} now follow(s) {driver}. Nothing moved: offsets keep the current pose.', { driven: driven.filter((b) => b !== driver).map((b) => app.doc.bones[b].name).join(', '), driver: app.doc.bones[driver].name }));
+      app.setStatus(statusMessage('{driven} now follow(s) {driver}. Nothing moved: offsets keep the current pose.', { driven: driven.filter((b) => b !== driver).map((b) => app.doc.bones[b].name).join(', '), driver: app.doc.bones[driver].name }));
     };
-    if (bones.length === 1) return app.startPick(t('Click the bone that drives {bone}', { bone: app.doc.bones[bones[0]].name }), (driver) => finish(bones, driver));
+    if (bones.length === 1) return app.startPick(tn('Click the bone that drives {bone}'), (driver) => finish(bones, driver), { bone: app.doc.bones[bones[0]].name });
     return finish(bones.slice(0, -1), bones.at(-1));
   }
   const result = createConstraint(app, type);
-  if (result.startsWith('!')) app.setStatus(result.slice(1));
+  if (result.startsWith('!')) app.setStatus(() => t(result).slice(1));
   else {
     app.sel = { constraint: result };
     app.multi.clear();
-    app.setStatus(t("Created {type} constraint '{name}'", { type: t(label), name: result }) + (type === 'physics' ? `. ${t(PHYSICS_HINT)}` : ''));
+    app.setStatus(joinStatus(
+      statusMessage("Created {type} constraint '{name}'", { type: statusMessage(label), name: result }),
+      type === 'physics' ? joinStatus('. ', statusMessage(PHYSICS_HINT)) : '',
+    ));
   }
   app.changed();
 }

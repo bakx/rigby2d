@@ -15,6 +15,7 @@ import { simulate, bakePhysics, lintAnimations } from '../src/core/automation.js
 import * as author from '../src/core/authoring.js';
 import { readSkeletonJson, writeSkeletonJson } from '../src/core/interop.js';
 import { createEditTools, save } from '../src/mcp/edits.js';
+import { authoringTools } from '../src/mcp/authoring.js';
 import { createTools, Workspace, loadProject } from '../src/mcp/tools.js';
 import { createFilmTools } from '../src/mcp/film.js';
 import { createRiggingTools } from '../src/mcp/rigging.js';
@@ -158,6 +159,18 @@ test('duplicate_attachment clones deform keys and can target another skin', () =
   assert.deepEqual(outfit.map((a) => a.name), ['arm_alt']);
   assert.deepEqual(d.animations[0].deform.map((t) => [t.skin, t.attachment]), [[null, 'arm'], ['outfit', 'arm_alt']]);
   assert.notEqual(d.animations[0].deform[1].keys, d.animations[0].deform[0].keys);
+});
+
+test('upstream MCP attachment copies retain deform keys and deleting the skin removes them', () => {
+  const d = rig();
+  d.animations[0].deform.push({ skin: null, slot: 0, attachment: 'arm', keys: [{ time: 0, vertices: [1, 2], offset: 0 }] });
+  const tools = Object.fromEntries(authoringTools({}, {}).map((tool) => [tool.name, tool]));
+  tools.add_skin.apply(d, { name: 'outfit' });
+  tools.duplicate_attachment.apply(d, { slot: 'arm', attachment: 'arm', new_name: 'arm_alt', target_skin: 'outfit' });
+  assert.deepEqual(d.animations[0].deform.map((t) => [t.skin, t.attachment]), [[null, 'arm'], ['outfit', 'arm_alt']]);
+  assert.notEqual(d.animations[0].deform[1].keys, d.animations[0].deform[0].keys);
+  tools.delete_skin.apply(d, { name: 'outfit' });
+  assert.deepEqual(d.animations[0].deform.map((t) => [t.skin, t.attachment]), [[null, 'arm']]);
 });
 
 test('previews produce a single labeled PNG and GIF; video encodes frames', async (t) => {

@@ -26,7 +26,8 @@ import { sceneSummary } from './scene.js';
 import { decodePng, encodePng } from './png.js';
 import { ToolError } from './protocol.js';
 import { constraintInfo } from '../core/authoring.js';
-import { readImageFile, worldToLocalTool } from './authoring.js';
+import { readImageFile } from './authoring-extra.js';
+import { authoringReadTools } from './authoring.js';
 import { lintAnimations } from '../core/automation.js';
 import { createRenderingTools } from './rendering.js';
 
@@ -788,7 +789,7 @@ export const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempoten
 export function createTools(ws) {
   const load = async (p) => loadProject(await ws.existing(p));
   return [
-    worldToLocalTool(ws),
+    ...authoringReadTools(ws),
     ...createRenderingTools(ws),
     {
       name: 'inspect_project',

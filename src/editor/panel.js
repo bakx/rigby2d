@@ -15,12 +15,13 @@ import * as inspector from './inspector.js';
 import * as rigPanel from './rigpanel.js';
 import { installKeyboard } from './keys.js';
 import { closeMenu, isMenuOpen, widgetState, h } from './widgets.js';
+import { uiIcon } from './ui.js';
 import { EV_SYNC, EV_CONTROL, EV_CLOSED, EV_IMAGE, PANELS } from './dock.js';
 import { layoutHotkeyDigit, listenForPlacement } from './panelsync.js';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { blockNativeContextMenu } from './platform.js';
 import { emit, listen } from '@tauri-apps/api/event';
-import { t } from './i18n.js';
+import { language, languageFor, setLanguage, t } from './i18n.js';
 import { initThemes } from './themeui.js';
 
 blockNativeContextMenu({ dev: import.meta.env.DEV });
@@ -34,7 +35,8 @@ function buildTimeline(app) {
   const controls = h('div', { id: 'controls' });
   const dopeDiv = h('div', { id: 'dopesheet' }, h('canvas'));
   const graphDiv = h('div', { id: 'graph', hidden: true }, h('canvas'));
-  const wrap = h('div', { class: 'dopesheet-wrap' }, h('div', { class: 'empty' }, t('No animation. Create one in the editor window.')), dopeDiv, graphDiv);
+  const empty = h('div', { class: 'empty' });
+  const wrap = h('div', { class: 'dopesheet-wrap' }, empty, dopeDiv, graphDiv);
   const el = h('section', { id: 'timeline' }, controls, wrap);
   const dopesheet = new Dopesheet(app, dopeDiv, dopeDiv.querySelector('canvas'));
   const graph = new GraphEditor(app, graphDiv, graphDiv.querySelector('canvas'));
@@ -47,13 +49,14 @@ function buildTimeline(app) {
       graphDiv.hidden = !showGraph;
       if (showGraph) {
         dopeDiv.hidden = true;
-        wrap.querySelector('.empty').hidden = true;
+        empty.hidden = true;
         graph.draw();
       } else {
         dopesheet.draw();
       }
     },
     rebuild() {
+      setText(empty, t('No animation. Create one in the editor window.'));
       renderControls(app, controls);
     },
   };
@@ -83,10 +86,19 @@ const panelId = new URLSearchParams(location.search).get('panel') || 'timeline';
 const app = new App();
 initThemes(app);
 const $ = (sel) => document.querySelector(sel);
+function applyLanguage(code) {
+  setLanguage(code);
+  const panel = PANELS[panelId] ?? PANELS.timeline;
+  const title = `Rigby2D — ${t(panel.label)}`;
+  document.title = title;
+  $('#panel-dock').title = t('Dock this panel back into the editor');
+  $('#panel-pin').title = t('Keep this window above other windows, other apps included');
+  getCurrentWindow().setTitle(title).catch(() => {});
+}
+applyLanguage(app.prefs.get('interface.language') || languageFor(navigator.languages ?? [navigator.language]));
 const body = $('#panel-body');
 const view = (BUILDERS[panelId] ?? buildTimeline)(app);
 body.replaceChildren(view.el);
-document.title = `Rigby2D — ${PANELS[panelId]?.label ?? 'Panel'}`;
 
 // Image pixels are not part of the shared state (large, rarely needed), so fetch each one from the
 // editor the first time a thumbnail here needs it, then cache it in this window's store and redraw.
@@ -167,6 +179,7 @@ function busy() {
 }
 
 listen(EV_SYNC, (e) => {
+  if (e.payload.language && language() !== e.payload.language) applyLanguage(e.payload.language);
   app.applyStateSnapshot(e.payload);
   applyKeySelection(app, e.payload.keys);
   const s = app.snapshotState();
@@ -182,6 +195,25 @@ function dockBack() {
   getCurrentWindow().destroy().catch(() => {});
 }
 $('#panel-dock').addEventListener('click', () => dockBack());
+
+// Pin: keeps this window above every other window (other apps too), remembered per panel.
+const PIN_KEY = `rigby.panel.pin.${panelId}`;
+function setPinned(on) {
+  const btn = $('#panel-pin');
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+  getCurrentWindow().setAlwaysOnTop(on).catch(() => {});
+  try {
+    localStorage.setItem(PIN_KEY, on ? '1' : '0');
+  } catch {}
+}
+$('#panel-pin').replaceChildren(uiIcon('pin', 'sm'));
+$('#panel-pin').addEventListener('click', () => setPinned(!$('#panel-pin').classList.contains('on')));
+let pinned = false;
+try {
+  pinned = localStorage.getItem(PIN_KEY) === '1';
+} catch {}
+if (pinned) setPinned(true);
 getCurrentWindow().onCloseRequested(() => emit(EV_CLOSED, { panel: panelId }));
 
 /** Ships this window's edits and selection to the editor, once the first full state has arrived. */
@@ -217,7 +249,7 @@ function frame(now) {
     view.rebuild?.();
   }
   setText($('#status-text'), app.status);
-  setText($('#status-info'), `${app.doc.bones.length} bones · ${app.doc.slots.length} slots`);
+  setText($('#status-info'), t('{bones} bones · {slots} slots', { bones: app.doc.bones.length, slots: app.doc.slots.length }));
 
   // Settle a finished pointer edit into the document, then ship edits and selection to the editor.
   app.commitHistory(pointersDown > 0 || busy());

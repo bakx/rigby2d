@@ -23,7 +23,7 @@ import { has } from './workspaces.js';
 import { sounds } from './audio.js';
 import { renameOnionBone } from './onion.js';
 import { openLipSync } from './lipsyncui.js';
-import { t, tn } from './i18n.js';
+import { joinStatus, statusMessage, t, tn } from './i18n.js';
 import { colorButton } from './colorpicker.js';
 
 export function render(app, el) {
@@ -213,18 +213,14 @@ const fromHex = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) 
 function slotUi(app, s) {
   const setupMode = app.mode === Mode.Setup;
   const slot = app.doc.slots[s];
-  const color = colorButton(toHex(slot.color), {
+  const pose = app.pose();
+  const tint = setupMode ? slot.color : pose.color[s];
+  const color = colorButton(toHex(tint), {
     label: t('Slot color'),
-    disabled: !setupMode,
-    onInput: (v) => {
-      slot.color.splice(0, 3, ...fromHex(v));
-      app.changed();
-    },
+    onInput: (v) => edit.setSlotTint(app, s, 'rgb', fromHex(v)),
   });
-  const alpha = dragValue(slot.color[3], (v) => {
-    slot.color[3] = v;
-    app.changed();
-  }, { speed: 0.005, min: 0, max: 1, decimals: 2, prefix: 'a ', disabled: !setupMode });
+  const alpha = dragValue(tint[3], (v) => edit.setSlotTint(app, s, 'alpha', v),
+    { speed: 0.005, min: 0, max: 1, decimals: 2, prefix: 'a ' });
 
   const out = [
     h('h2', null, t('Slot')),
@@ -261,7 +257,7 @@ function slotUi(app, s) {
     h('div', { class: 'small weak' }, t('Pick which image is visible. In animate mode this sets a key.')),
   ];
 
-  const visible = app.pose().attachment[s];
+  const visible = pose.attachment[s];
   const radio = (value, label) =>
     h(
       'label',
@@ -316,7 +312,7 @@ function slotUi(app, s) {
         ? select(app.doc.images.map((i) => [i.name, i.name]), undefined, (image) => {
             const img = app.doc.images.find((i) => i.name === image);
             addToSlot(app, s, (name) => ({ name, type: 'linkedmesh', image, parent: att.name, skin: null, deform: true, width: img?.width ?? att.width, height: img?.height ?? att.height }), image); // named after its image, like exported linked meshes
-            app.setStatus(t("Linked mesh added: it shares this mesh's shape and weights with another image"));
+            app.setStatus(statusMessage("Linked mesh added: it shares this mesh's shape and weights with another image"));
           }, { placeholder: t('Linked mesh with image…') })
         : null,
       att.type === 'mesh' || att.type === 'linkedmesh' ? sequenceUi(app, s, att, setupMode) : null,
@@ -648,7 +644,7 @@ function generateUi(app, e, att) {
   const run = () => {
     const r = generateFromImage(app, e.slot, att, o, e.made ?? []);
     if (!r) {
-      app.setStatus(t('Generate mesh: the image has no pixels above the alpha threshold'));
+      app.setStatus(statusMessage('Generate mesh: the image has no pixels above the alpha threshold'));
       app.changed();
       return;
     }
@@ -657,16 +653,16 @@ function generateUi(app, e, att) {
     e.slot = app.doc.slots.findIndex((s) => s.attachments.includes(att) || s.attachment === att.name);
     const shapes =
       r.islands < 2 ? ''
-      : o.islands === 'split' ? '; ' + t('{count} shapes, one mesh each', { count: (r.meshes ?? [r]).length })
-      : o.islands === 'merge' ? '; ' + t('{count} shapes in one mesh', { count: r.shapes })
-      : '; ' + t('used the largest of {count} separate shapes', { count: r.islands });
+      : o.islands === 'split' ? statusMessage('{count} shapes, one mesh each', { count: (r.meshes ?? [r]).length })
+      : o.islands === 'merge' ? statusMessage('{count} shapes in one mesh', { count: r.shapes })
+      : statusMessage('used the largest of {count} separate shapes', { count: r.islands });
     const locked = Object.keys(r.locked ?? {}).length;
-    app.setStatus(
-      t('Generated {vertices} vertices ({hull} on the outline), {triangles} triangles', { vertices: r.points.length, hull: r.hull, triangles: r.triangles.length / 3 }) +
-        shapes +
-        (locked ? '; ' + t('kept {count} locked vertex(es)', { count: locked }) : '') +
-        (r.removed ? '; ' + t('removed {count} deform timeline(s)', { count: r.removed }) : ''),
-    );
+    app.setStatus(joinStatus(
+      statusMessage('Generated {vertices} vertices ({hull} on the outline), {triangles} triangles', { vertices: r.points.length, hull: r.hull, triangles: r.triangles.length / 3 }),
+      shapes ? joinStatus('; ', shapes) : '',
+      locked ? joinStatus('; ', statusMessage('kept {count} locked vertex(es)', { count: locked })) : '',
+      r.removed ? joinStatus('; ', statusMessage('removed {count} deform timeline(s)', { count: r.removed })) : '',
+    ));
     app.changed();
   };
   // After the first generate, changing a setting regenerates (live preview); before it, nothing changes.
@@ -758,7 +754,10 @@ function meshUi(app) {
             onclick: () => {
               const removed = bindMesh(doc, e.slot, att, selectedBones);
               e.bone = selectedBones[0];
-              app.setStatus(`${selectedBones.length === 1 ? t('Bound to 1 bone') : t('Bound to {count} bones', { count: selectedBones.length })}${removed ? `; ${t('removed {count} deform timeline(s)', { count: removed })}` : ''}`);
+              app.setStatus(joinStatus(
+                selectedBones.length === 1 ? statusMessage('Bound to 1 bone') : statusMessage('Bound to {count} bones', { count: selectedBones.length }),
+                removed ? joinStatus('; ', statusMessage('removed {count} deform timeline(s)', { count: removed })) : '',
+              ));
               app.changed();
             },
           },
