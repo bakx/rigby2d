@@ -24,6 +24,7 @@ export const LINKS = {
   releaseNotes: VERSION ? `${REPO}/releases/tag/v${VERSION}` : `${REPO}/releases`,
   fund: `${SITE}fund/`,
   sponsor: 'https://github.com/sponsors/jaisurya-dev-art',
+  kofi: 'https://ko-fi.com/rigby2d',
 };
 
 // Enhancements fork marker: remove once upstream carries these changes.
@@ -322,7 +323,7 @@ export function openAbout() {
       ),
     ),
     h('div', { class: 'about-links' }, link(t('Website'), LINKS.website), link(t('Documentation'), LINKS.docs), link(t('Source code'), LINKS.repo), link(t('Release notes'), LINKS.releaseNotes), link(t('Support Rigby2D'), LINKS.fund), link('Enhancements fork', EDITION.url)),
-    h('p', { class: 'about-fine' }, t('Rigby2D is free and stays free. Supporters pay for code signing and keep it moving.')),
+    h('p', { class: 'about-fine' }, t('Rigby2D is free and stays free. Supporters fund its development, one day a week at a time.')),
     h(
       'p',
       { class: 'about-fine' },
@@ -382,7 +383,7 @@ export async function openSupporters() {
   const goalCard = h(
     'section',
     { class: 'sp-goal' },
-    h('div', { class: 'sp-goal-top' }, h('span', { class: 'sp-goal-title' }, goal.title ?? t('Signed by Rigby2D')), h('span', { class: 'sp-goal-amount' }, t('{percent}% of ${monthly} a month', { percent, monthly: goal.monthly ?? 25 }))),
+    h('div', { class: 'sp-goal-top' }, h('span', { class: 'sp-goal-title' }, goal.title ?? t('Rigby2D Fridays')), h('span', { class: 'sp-goal-amount' }, t('{percent}% of ${monthly} a month', { percent, monthly: goal.monthly ?? 250 }))),
     h('div', { class: 'sp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(percent) }, fill),
     h(
       'div',
@@ -408,7 +409,7 @@ export async function openSupporters() {
       'div',
       { class: 'sp-footer' },
       h('p', { class: 'weak' }, t('Nothing is locked behind a tier. Support keeps Rigby2D free for everyone.')),
-      h('div', { class: 'buttons' }, button(t('Where the money goes'), { icon: 'external-link', onclick: () => openExternal(LINKS.fund) }), button(t('Sponsor on GitHub'), { kind: 'primary', icon: 'external-link', onclick: () => openExternal(LINKS.sponsor) })),
+      h('div', { class: 'buttons' }, button(t('Where the money goes'), { icon: 'external-link', onclick: () => openExternal(LINKS.fund) }), button(t('Ko-fi'), { icon: 'external-link', title: t('A card or PayPal, no GitHub account needed'), onclick: () => openExternal(LINKS.kofi) }), button(t('Sponsor on GitHub'), { kind: 'primary', icon: 'external-link', onclick: () => openExternal(LINKS.sponsor) })),
     ),
   ];
   body.append(...parts.filter(Boolean));

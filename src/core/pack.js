@@ -46,10 +46,21 @@ export function meshImages(doc) {
 export function pack(items, { padding = 2, maxSize = 8192, powerOfTwo = true } = {}) {
   if (powerOfTwo && (maxSize & (maxSize - 1)) !== 0) throw new Error('a power-of-two atlas requires a power-of-two maximum size');
   const fit = (n) => (powerOfTwo ? nextPowerOfTwo(n) : n);
-  const widest = items.reduce((m, it) => Math.max(m, it.width + padding * 2), 1);
-  if (widest > maxSize || items.some((it) => it.height + padding * 2 > maxSize)) throw new Error(`an image does not fit in a ${maxSize}px atlas`);
-  let rest = items.map((_, i) => i).sort((a, b) => items[b].height - items[a].height);
-  const pages = [];
+  const padded = [], full = [];
+  for (const [i, item] of items.entries()) {
+    const { name, width, height } = item;
+    if (width > maxSize || height > maxSize) {
+      throw new Error(`image '${name}' (${width}x${height}) is bigger than an atlas page (${maxSize}x${maxSize} at most)`);
+    }
+    if (width + padding * 2 > maxSize || height + padding * 2 > maxSize) full.push(item);
+    else padded.push(i);
+  }
+  // A page-sized image has no room for padding and must be on its own page.
+  const pages = full.sort((a, b) => b.width * b.height - a.width * a.height).map(({ name, width, height }) => ({
+    width: fit(width), height: fit(height), regions: [{ name, x: 0, y: 0, width, height }],
+  }));
+  const widest = padded.reduce((m, i) => Math.max(m, items[i].width + padding * 2), 1);
+  let rest = padded.sort((a, b) => items[b].height - items[a].height);
   while (rest.length) {
     let width = Math.min(maxSize, fit(Math.max(powerOfTwo ? 256 : 1, widest)));
     for (;;) {

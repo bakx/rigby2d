@@ -12,11 +12,12 @@ import { openExportDialog } from './exportui.js';
 // on-canvas preview), not on the shared document. A detached window runs these locally — so its
 // own dopesheet shows the overlay — instead of forwarding them to the editor like every other
 // shortcut. The paste's document change still ships to the editor as one undo step (panel.js).
-const LOCAL_ACTIONS = new Set(['edit.cutKeys', 'edit.copyKeys', 'edit.pasteKeys']);
+const LOCAL_ACTIONS = new Set(['edit.cutKeys', 'edit.copyKeys', 'edit.pasteKeys', 'edit.pasteKeysReversed']);
 
 /** True while the user is typing in a text field (only File shortcuts run then). */
 export const isTyping = (el) =>
-  el && ((el.tagName === 'INPUT' && !el.readOnly && !['checkbox', 'radio', 'color'].includes(el.type)) || el.tagName === 'TEXTAREA');
+  // contentEditable: the script editor's code editor (CodeMirror) and its console.
+  el && ((el.tagName === 'INPUT' && !el.readOnly && !['checkbox', 'radio', 'color'].includes(el.type)) || el.tagName === 'TEXTAREA' || el.isContentEditable === true);
 
 /**
  * Runs a keymap action against `app`. `ctx` supplies the parts only some windows have: `viewport`
@@ -63,6 +64,14 @@ export function runAction(app, action, ctx) {
     },
     'select.none': () => (app.pick ? app.finishPick(null) : app.warpEdit ? ((app.warpEdit = null), app.changed()) : app.deselect()),
     'view.fit': () => (app.frameRequest = true),
+    'view.frameSelected': () => {
+      viewport?.frameSelected();
+      app.changed();
+    },
+    'select.all': () => edit.selectRelated(app, 'all'),
+    'select.parent': () => edit.selectRelated(app, 'parent'),
+    'select.children': () => edit.selectRelated(app, 'children'),
+    'select.branch': () => edit.selectRelated(app, 'branch'),
     'view.overlays': () => {
       app.hideOverlays = !app.hideOverlays;
       app.changed();
@@ -75,6 +84,7 @@ export function runAction(app, action, ctx) {
     'edit.cutKeys': () => cutSelectedKeys?.(app),
     'edit.copyKeys': () => copySelectedKeys?.(app),
     'edit.pasteKeys': () => pasteKeys?.(app),
+    'edit.pasteKeysReversed': () => pasteKeys?.(app, { reversed: true }),
     'edit.delete': () => {
       if (viewport && (viewport.meshTool.deleteSelected() || viewport.shapeTool.deleteSelected())) return;
       if (app.selectedKeys.size) deleteSelectedKeys(app);
@@ -88,6 +98,12 @@ export function runAction(app, action, ctx) {
     'file.export': () => openExportDialog(app, 'json', app.saveVersion()),
     'menu.close': () => closeMenu?.(),
     'app.preferences': () => ctx.openPreferences?.(),
+    'app.commands': () => ctx.openCommands?.(),
+    'edit.duplicate': () => edit.duplicateSelection(app),
+    'edit.mirrorDuplicate': () => edit.duplicateSelection(app, { mirror: true }),
+    'pose.copy': () => edit.copyPoseOfSelection(app),
+    'pose.paste': () => edit.pastePoseHere(app),
+    'pose.pasteFlipped': () => edit.pastePoseHere(app, { flipped: true }),
   };
   handlers[action]?.();
 }

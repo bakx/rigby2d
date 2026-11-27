@@ -95,14 +95,10 @@ copy(path.join(repo, 'THIRD_PARTY_NOTICES.md'), path.join(stage, 'THIRD_PARTY_NO
 // The tool list shown on the install screen, read from the server itself.
 const listed = JSON.parse(
   execFileSync(process.execPath, ['--input-type=module', '-e', `
-    const { Workspace, createTools } = await import(${JSON.stringify(new URL('../src/mcp/tools.js', import.meta.url).href)});
-    const { createEditTools } = await import(${JSON.stringify(new URL('../src/mcp/edits.js', import.meta.url).href)});
-    const { createFilmTools } = await import(${JSON.stringify(new URL('../src/mcp/film.js', import.meta.url).href)});
-    const { createRiggingTools } = await import(${JSON.stringify(new URL('../src/mcp/rigging.js', import.meta.url).href)});
-    const { createScriptTools } = await import(${JSON.stringify(new URL('../src/mcp/scripting.js', import.meta.url).href)});
-    const { createSceneTools } = await import(${JSON.stringify(new URL('../src/mcp/scene.js', import.meta.url).href)});
+    const { Workspace } = await import(${JSON.stringify(new URL('../src/mcp/tools.js', import.meta.url).href)});
+    const { createToolRegistry } = await import(${JSON.stringify(new URL('../src/mcp/registry.js', import.meta.url).href)});
     const ws = await Workspace.open([process.cwd()]);
-    const all = [...createTools(ws), ...createEditTools(ws), ...createFilmTools(ws), ...createRiggingTools(ws), ...createSceneTools(ws), ...createScriptTools(ws)];
+    const all = createToolRegistry(ws);
     process.stdout.write(JSON.stringify(all.map((t) => ({ name: t.name, description: t.description.split('. ')[0].replace(/\\.$/, '') + '.' }))));
   `], { cwd: repo, encoding: 'utf8' }),
 );

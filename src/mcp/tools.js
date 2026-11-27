@@ -852,7 +852,7 @@ export function createTools(ws) {
     {
       name: 'convert_project',
       title: 'Convert project',
-      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.',
+      description: 'Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel (4.0 through 4.3). With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.',
       inputSchema: {
         type: 'object',
         properties: {

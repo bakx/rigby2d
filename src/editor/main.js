@@ -7,8 +7,8 @@ import { emit } from '@tauri-apps/api/event';
 import { Window, getCurrentWindow } from '@tauri-apps/api/window';
 
 import './style.css';
-import { App, Mode, saveSetting, saveShapes } from './app.js';
-import { shortcutLabel, withShortcut } from './keymap.js';
+import { App, Mode, saveSetting, saveShapes, selBone } from './app.js';
+import { ACTIONS as KEY_ACTIONS, shortcutLabel, withShortcut } from './keymap.js';
 import { icon } from './icons.js';
 import { installKeyboard, isTyping, runAction } from './keys.js';
 import { openRenderDialog } from './renderui.js';
@@ -22,15 +22,17 @@ import { clipTracks } from './actors.js';
 import { blockNativeContextMenu, desktopFile, isDesktop, launchFile, memoryFs, onFileDrop, openExternal } from './platform.js';
 import * as edit from './edit.js';
 import * as toolbar from './toolbar.js';
+import { menuCommands } from './commandmatch.js';
+import { openCommandSearch } from './commandsearch.js';
 import * as tree from './tree.js';
 import { clearViewState, hasViewState } from './visibility.js';
 import * as inspector from './inspector.js';
 import * as rigPanel from './rigpanel.js';
-import { findPanel, rigLeftDock } from './docklayout.js';
+import { findPanel } from './docklayout.js';
 import { GraphEditor } from './graph.js';
-import { Dopesheet, copySelectedKeys, cutSelectedKeys, deleteSelectedKeys, exitSelectModes, pasteKeys, renderControls } from './timeline.js';
+import { Dopesheet, copySelectedKeys, cutSelectedKeys, deleteSelectedKeys, exitSelectModes, pasteKeys, renderControls, setPastePreviewReversed } from './timeline.js';
 import { Viewport } from './viewport.js';
-import { checkItem, closeMenu, h, isMenuOpen, popupMenu, submenuItem, widgetState } from './widgets.js';
+import { checkItem, closeMenu, h, isMenuOpen, menuHeading, menuNote, popupMenu, submenuItem, widgetState } from './widgets.js';
 import { uiIcon } from './ui.js';
 import * as log from './log.js';
 import { toggleLogWindow, windowOpen as logOpen } from './logwindow.js';
@@ -38,7 +40,7 @@ import { Scripts } from './scripting/scriptui.js';
 import { createTutorials } from './tutorials/index.js';
 import { openAiConnect } from './aiconnect.js';
 import { installPanelSync } from './panelsync.js';
-import { windowLayoutsMenuItem } from './layoutui.js';
+import { windowLayoutsSubmenu } from './layoutui.js';
 import { installDock } from './dockui.js';
 import { openDemoPicker } from './demoui.js';
 import { DEMOS } from './demos.js';
@@ -155,6 +157,16 @@ function menus() {
     Edit: [
       { label: t('Undo'), shortcut: sc('edit.undo'), disabled: !app.history.undo.length, action: () => app.undo() },
       { label: t('Redo'), shortcut: sc('edit.redo'), disabled: !app.history.redo.length, action: () => app.redo() },
+      // Every step with what it did; pick one to go back (or forward) to it.
+      submenuItem(t('Undo history'), () => {
+        const { done, undone } = app.historyEntries();
+        const items = [
+          ...done.slice(-24).map((e) => ({ label: e.label, title: t('Go back to before this step'), action: () => app.jumpHistory(e.offset) })),
+          { label: t('Now'), checked: true, disabled: true, action: () => {} },
+          ...undone.slice(0, 12).map((e) => ({ label: e.label, class: 'weak', title: t('Redo up to this step'), action: () => app.jumpHistory(e.offset) })),
+        ];
+        return done.length || undone.length ? items : [{ label: t('Nothing to undo yet'), disabled: true, action: () => {} }];
+      }),
       'separator',
       { label: t('Key changed properties'), shortcut: sc('key.changed'), action: () => edit.keyChanged(app) },
       { label: t("Key the current tool's property"), shortcut: sc('key.tool'), action: () => edit.keyTool(app) },
@@ -164,85 +176,93 @@ function menus() {
       { label: t('Cut keys'), shortcut: sc('edit.cutKeys'), disabled: !app.selectedKeys.size, action: () => cutSelectedKeys(app) },
       { label: t('Copy keys'), shortcut: sc('edit.copyKeys'), disabled: !app.selectedKeys.size, action: () => copySelectedKeys(app) },
       { label: t('Paste keys'), shortcut: sc('edit.pasteKeys'), action: () => pasteKeys(app) },
+      { label: t('Paste keys reversed'), shortcut: sc('edit.pasteKeysReversed'), action: () => pasteKeys(app, { reversed: true }), onpreview: setPastePreviewReversed },
       'separator',
+      { label: t('Copy pose'), shortcut: sc('pose.copy'), title: t('The selected bones (or every bone) as they are posed now'), action: () => edit.copyPoseOfSelection(app) },
+      { label: t('Paste pose'), shortcut: sc('pose.paste'), disabled: !app.poseClipboard, action: () => edit.pastePoseHere(app) },
+      { label: t('Paste pose flipped'), shortcut: sc('pose.pasteFlipped'), disabled: !app.poseClipboard, title: t('Left and right swapped (bones named _l/_r, .L/.R, left/right), centre bones turned the other way'), action: () => edit.pastePoseHere(app, { flipped: true }) },
+      'separator',
+      { label: t('Duplicate bone'), shortcut: sc('edit.duplicate'), disabled: app.mode !== Mode.Setup || !(selBone(app.sel) > 0), title: t('The selected bone with every bone below it and their slots'), action: () => edit.duplicateSelection(app) },
+      { label: t('Mirror to the other side'), shortcut: sc('edit.mirrorDuplicate'), disabled: app.mode !== Mode.Setup || !(selBone(app.sel) > 0), title: t('A copy of the selected branch on the other side: arm_l becomes arm_r, mirrored'), action: () => edit.duplicateSelection(app, { mirror: true }) },
+      'separator',
+      { label: t('Select all bones'), shortcut: sc('select.all'), action: () => edit.selectRelated(app, 'all') },
       { label: t('Deselect'), shortcut: sc('select.none'), action: () => app.deselect() },
+      submenuItem(t('Select related'), [
+        { label: t('Parent'), shortcut: sc('select.parent'), action: () => edit.selectRelated(app, 'parent') },
+        { label: t('Children'), shortcut: sc('select.children'), action: () => edit.selectRelated(app, 'children') },
+        { label: t('Whole branch'), shortcut: sc('select.branch'), action: () => edit.selectRelated(app, 'branch') },
+      ]),
       { label: t('Delete selection'), shortcut: sc('edit.delete'), action: () => edit.deleteSelection(app) },
       'separator',
       { label: t('Preferences…'), shortcut: sc('app.preferences'), action: () => showPreferences() },
     ],
+    // Three groups, each under a heading: what the viewport draws, the timeline, and the window.
     View: [
-      h(
-        'label',
-        { class: 'item' },
-        h('input', {
-          type: 'checkbox',
-          checked: app.showBones,
-          onchange: (e) => {
-            app.showBones = e.target.checked;
+      menuHeading(t('Viewport')),
+      checkItem(t('Show bones'), app.showBones, (on) => {
+        app.showBones = on;
+        app.changed();
+      }),
+      // A live slider: the menu leaves the viewport in view, so the bones resize as it moves.
+      submenuItem(t('Bone size'), () => {
+        const pct = (v) => `${Math.round(v * 100)}%`;
+        const value = h('span', { class: 'menu-slider-value' }, pct(app.prefs.get('view.boneSize')));
+        const input = h('input', {
+          type: 'range',
+          min: 0.5,
+          max: 2.5,
+          step: 0.1,
+          value: app.prefs.get('view.boneSize'),
+          'aria-label': t('Bone size'),
+          oninput: (e) => {
+            app.prefs.set('view.boneSize', Number(e.target.value));
+            value.textContent = pct(app.prefs.get('view.boneSize'));
             app.changed();
           },
-        }),
-        ` ${t('Show bones')}`,
-      ),
-      // Attachment shapes over the art, one switch per kind (remembered between sessions).
-      ...[
-        ['clipping', t('Show clipping masks')],
-        ['boundingbox', t('Show bounding boxes')],
-        ['path', t('Show paths')],
-        ['point', t('Show points')],
-      ].map(([kind, label]) =>
-        h(
-          'label',
-          { class: 'item' },
-          h('input', {
-            type: 'checkbox',
-            checked: app.showShapes[kind],
-            onchange: (e) => {
-              app.showShapes[kind] = e.target.checked;
-              saveShapes(app.showShapes);
+        });
+        return [
+          h('div', { class: 'item menu-slider', title: t('How big bones are drawn in the viewport. Smaller for tiny characters, bigger for large ones.') }, input, value),
+          {
+            label: t('Normal size (100%)'),
+            action: () => {
+              app.prefs.reset('view.boneSize');
               app.changed();
             },
-          }),
-          ` ${label}`,
-        ),
+          },
+        ];
+      }),
+      // Attachment shapes over the art, one switch per kind (remembered between sessions).
+      submenuItem(
+        t('Shapes'),
+        () =>
+          [
+            ['clipping', t('Clipping masks')],
+            ['boundingbox', t('Bounding boxes')],
+            ['path', t('Paths')],
+            ['point', t('Points')],
+          ].map(([kind, label]) =>
+            checkItem(label, app.showShapes[kind], (on) => {
+              app.showShapes[kind] = on;
+              saveShapes(app.showShapes);
+              app.changed();
+            }),
+          ),
+        { title: t('Which attachment shapes are drawn over the art. A selected shape always shows.') },
       ),
       has(app, 'outputFrame') &&
-      h(
-        'label',
-        { class: 'item' },
-        h('input', {
-          type: 'checkbox',
-          checked: app.showFrame,
-          onchange: (e) => {
-            app.showFrame = e.target.checked;
-            app.changed();
-          },
+        checkItem(t('Show output frame'), app.showFrame, (on) => {
+          app.showFrame = on;
+          app.changed();
         }),
-        ` ${t('Show output frame')}`,
-      ),
-      h(
-        'label',
-        { class: 'item', title: t('Off: the timeline hides in Setup mode, so the viewport gets its room') },
-        h('input', {
-          type: 'checkbox',
-          checked: app.timelineInSetup,
-          onchange: (e) => {
-            app.timelineInSetup = e.target.checked;
-            saveSetting('rigby.view.timelineInSetup', app.timelineInSetup ? '1' : '0');
-            app.changed();
-          },
-        }),
-        ` ${t('Timeline in Setup mode')}`,
-      ),
       checkItem(
-        t('Tween lines'),
-        app.tweenLines,
+        t('Motion paths'),
+        app.motionPaths,
         (on) => {
-          app.tweenLines = on;
-          saveSetting('rigby.view.tweenLines', on ? '1' : '0');
+          app.motionPaths = on;
+          saveSetting('rigby.view.motionPaths', on ? '1' : '0');
           app.changed();
         },
-        { title: t('Draws a thin line in the dopesheet between keys that blend into each other; stepped keys and image switches get none') },
+        { title: t('In Animate mode, draws where the tips of the selected bones go over the animation, with a dot per key') },
       ),
       submenuItem(t('Bone links'), () => {
         // One of three: picking one unticks the others (and the ticked one can't be unticked).
@@ -291,18 +311,44 @@ function menus() {
           if (clearViewState(app.doc)) app.changed();
         },
       },
-      { label: logOpen() ? t('Hide log') : t('Log'), action: () => toggleLogWindow() },
-      submenuItem(t('Panel layout'), () => [
-        { label: t('Rig on the left'), title: t('Skins, constraints, meshes and events in a Rig panel left of the viewport'), action: () => applyPreset(rigLeftDock(), t('Rig on the left')) },
-        checkItem(t('Rig panel'), dock.has('rig'), (on) => (on ? dock.open('rig') : dock.close('rig')), { title: t('Skins, constraints, meshes and events in their own panel') }),
+      'separator',
+      menuHeading(t('Timeline')),
+      checkItem(
+        t('Timeline in Setup mode'),
+        app.timelineInSetup,
+        (on) => {
+          app.timelineInSetup = on;
+          saveSetting('rigby.view.timelineInSetup', on ? '1' : '0');
+          app.changed();
+        },
+        { title: t('Off: the timeline hides in Setup mode, so the viewport gets its room') },
+      ),
+      checkItem(
+        t('Tween lines'),
+        app.tweenLines,
+        (on) => {
+          app.tweenLines = on;
+          saveSetting('rigby.view.tweenLines', on ? '1' : '0');
+          app.changed();
+        },
+        { title: t('Draws a thin line in the dopesheet between keys that blend into each other; stepped keys and image switches get none') },
+      ),
+      'separator',
+      menuHeading(t('Window')),
+      // Everything about where panels sit: the optional Rig panel, saved layouts, and the reset.
+      submenuItem(t('Panels'), () => [
+        checkItem(t('Rig panel'), dock.has('rig'), (on) => (on ? dock.open('rig') : dock.close('rig'))),
+        menuNote(t('Skins, constraints, meshes and events in a panel of their own, left of the viewport, out of the tree')),
+        // Save and recall where the panels sit and their sizes (on the desktop, the popped-out windows too).
+        ...(sync ? ['separator', menuHeading(t('Saved layouts')), ...windowLayoutsSubmenu({ app, sync })] : []),
         'separator',
-        { label: t('Reset layout'), title: t('Put the panels back in their default places and sizes'), action: () => resetLayout() },
+        { label: t('Reset panels'), title: t('Put the panels back in their default places and sizes'), action: () => resetLayout() },
       ]),
       { label: t('Themes…'), title: t('Make your own theme, or import one'), action: () => openThemes(app) },
-      // Save and recall where the panels sit and their sizes (on the desktop, the popped-out windows too).
-      ...(sync ? [windowLayoutsMenuItem({ app, sync })] : []),
+      { label: logOpen() ? t('Hide log') : t('Log'), action: () => toggleLogWindow() },
       'separator',
       { label: t('Fit the skeleton in view'), shortcut: sc('view.fit'), action: () => (app.frameRequest = true) },
+      { label: t('Frame the selection'), shortcut: sc('view.frameSelected'), action: () => viewport.frameSelected() },
       { label: t('Zoom to 100%'), shortcut: sc('view.actual'), action: () => zoomActual() },
       // The renderer and the shortcut preset are in Preferences (Interface, Keyboard).
     ],
@@ -313,6 +359,7 @@ function menus() {
       'separator',
       { label: t('Welcome screen…'), action: () => openWelcome(app, { tutorials, whatsNew }) },
       { label: t('Tutorials…'), action: () => tutorials.open() },
+      { label: t('Find a command…'), shortcut: sc('app.commands'), action: () => openCommands() },
       { label: t('Keyboard shortcuts…'), action: () => openShortcuts(app) },
       { label: t('Documentation'), shortcut: '↗', action: () => openExternal(LINKS.docs) },
       { label: t('Connect an AI assistant…'), action: () => openAiConnect() },
@@ -327,7 +374,7 @@ function menus() {
         { label: t('Report a crash…'), title: t('A report of the recent errors, to copy or post'), action: () => recovery.openCrashReport() },
       ]),
       'separator',
-      { label: t('Support Rigby2D…'), title: t('Rigby2D is free. Supporters pay for code signing and keep it moving.'), action: () => openSupporters() },
+      { label: t('Support Rigby2D…'), title: t('Rigby2D is free. Supporters fund its development.'), action: () => openSupporters() },
       ...(inTauri ? [{ label: t('Check for updates…'), action: () => checkForUpdates(app) }] : []),
       { label: t('About Rigby2D'), action: () => openAbout() },
     ],
@@ -425,6 +472,23 @@ function buildMenuBar() {
     uiIcon('onion', 'sm'),
     h('span', null, t('Onion skin on')),
   );
+  // Notice that Bone only is on (Setup mode): a dragged bone leaves its images and child bones
+  // behind, so say so where it can't be missed, with a click to turn it off.
+  const boneOnlyNotice = h(
+    'button',
+    {
+      class: 'boneonly-notice',
+      'data-tut': 'boneonly-notice',
+      hidden: true,
+      title: t('Bone only is on: a bone moves without its images and child bones. Click to turn it off.'),
+      onclick: () => {
+        app.boneOnly = false;
+        app.changed();
+      },
+    },
+    uiIcon('pin', 'sm'),
+    h('span', null, t('Bone only on')),
+  );
   // Workspace switcher: which tools the editor shows for this project.
   const workspaces = Object.values(WORKSPACES);
   const tabs = workspaces.map((ws) => h('button', { class: 'workspace-tab', 'data-tut': `workspace:${ws.id}`, title: t(ws.description), onclick: () => app.workspace !== ws.id && app.setWorkspace(ws.id) }, t(ws.label)));
@@ -436,7 +500,7 @@ function buildMenuBar() {
     : h('a', { class: 'home-link', href: '../', title: t('Rigby2D website: home, documentation and downloads'), 'data-goatcounter-click': 'editor-home' }, brandMark(18, 'home-mark'), h('span', null, t('Rigby2D')));
   const docTitle = inTauri ? null : h('span', { class: 'doc-title' });
   bar.replaceChildren(
-    ...[home, home && h('span', { class: 'vsep' }), ...titles, h('span', { class: 'vsep' }), mode, quickBar, onionNotice, h('span', { class: 'spacer' }), docTitle, docTitle && h('span', { class: 'spacer' }), updateBadge(app), switcher].filter(Boolean),
+    ...[home, home && h('span', { class: 'vsep' }), ...titles, h('span', { class: 'vsep' }), mode, quickBar, onionNotice, boneOnlyNotice, h('span', { class: 'spacer' }), docTitle, docTitle && h('span', { class: 'spacer' }), updateBadge(app), switcher].filter(Boolean),
   );
   // Called every frame: touch the DOM only when something shown changed.
   let shown = '';
@@ -462,6 +526,8 @@ function buildMenuBar() {
     }
     // The notice follows the live onion state, independent of the cached menubar state below.
     onionNotice.hidden = !app.onionActive();
+    const boneOnlyHidden = !(app.mode === Mode.Setup && app.boneOnly);
+    if (boneOnlyNotice.hidden !== boneOnlyHidden) boneOnlyNotice.hidden = boneOnlyHidden;
     if (docTitle) {
       const name = app.path ? app.path.split(/[\\/]/).pop() : `${app.doc.name && app.doc.name !== 'untitled' ? app.doc.name : t('untitled')} ${t('(not saved yet)')}`;
       const dirty = app.dirty();
@@ -607,13 +673,7 @@ app.prefs.onChange((key) => {
   app.changed();
 });
 
-/** View ▸ Panel layout ▸ a preset. */
-function applyPreset(layout, name) {
-  dock.set(layout);
-  app.setStatus(statusMessage('Panel layout: {name}', { name }));
-}
-
-/** View ▸ Reset layout: today's arrangement and region sizes. */
+/** View ▸ Panels ▸ Reset panels: today's arrangement and region sizes. */
 function resetLayout() {
   dock.reset();
   for (const s of splitters) s.reset();
@@ -636,7 +696,23 @@ sync = installPanelSync(app, {
 });
 const dopesheet = new Dopesheet(app, $('#dopesheet'), $('#dopesheet canvas'));
 const graph = new GraphEditor(app, $('#graph'), $('#graph canvas'));
-installKeyboard(app, { viewport, zoomActual, deleteSelectedKeys, copySelectedKeys, cutSelectedKeys, pasteKeys, exitSelectModes, closeMenu, isMenuOpen, openPreferences: () => showPreferences() });
+const keyCtx = { viewport, zoomActual, deleteSelectedKeys, copySelectedKeys, cutSelectedKeys, pasteKeys, exitSelectModes, closeMenu, isMenuOpen, openPreferences: () => showPreferences(), openCommands: () => openCommands() };
+installKeyboard(app, keyCtx);
+
+/** Command search: every menu item (with its menu as the path) and every keyboard action not already in a menu. */
+function openCommands() {
+  closeMenu();
+  openCommandSearch(() => {
+    const out = [];
+    for (const [title, items] of Object.entries(menus())) out.push(...menuCommands(items, [t(title)]));
+    const named = new Set(out.map((c) => c.label));
+    for (const [id, label] of KEY_ACTIONS) {
+      if (named.has(t(label)) || id === 'app.commands' || id === 'menu.close') continue;
+      out.push({ label: t(label), path: [t('Keyboard')], shortcut: shortcutLabel(app.keymap, id), run: () => runAction(app, id, keyCtx) });
+    }
+    return out;
+  });
+}
 const renderMenuBar = buildMenuBar();
 
 // In the browser, leaving the page (the home link, closing the tab) asks first when there are unsaved

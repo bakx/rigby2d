@@ -7,11 +7,14 @@ import { EASE_IN_OUT, LINEAR, STEPPED, cloneCurve } from '../core/curve.js';
 import { toAffine, transform } from '../core/math.js';
 import { makeBone, moveAttachment } from '../core/model.js';
 import { keySlotTint } from '../core/keying.js';
+import { renameBoneRefs, renameSlotRefs } from '../core/constraintdata.js';
 import { Pose } from '../core/pose.js';
 import { FPS, Mode, selBone, selSlot, snap } from './app.js';
 import { CHANNEL_FIELDS, TRANSFORM_CHANNELS as CHANNELS } from './channels.js';
 import { constraintsKeeping, keepPoseOffsets } from './constraintoffsets.js';
 import { statusMessage, t } from './i18n.js';
+import { renameOnionBone } from './onion.js';
+import { copyPose, duplicateBranch, pastePose } from './rigops.js';
 import { setBoneSetupOnly } from './setupmove.js';
 
 /** Makes sure an animation exists and is selected, creating one if needed. Returns its index. */
@@ -83,8 +86,10 @@ export function setBoneLocal(app, bone, t) {
   } else if (app.mode === Mode.Setup) {
     // "Bone only" (toolbar): the bone's children and images stay where they are drawn. The Pose tool
     // turns whole chains, so it always carries them along.
-    if (app.boneOnly && app.tool !== 'pose') setBoneSetupOnly(app.doc, bone, t, new Set(app.selectedBones()));
-    else app.doc.bones[bone].setup = t;
+    if (app.boneOnly && app.tool !== 'pose') {
+      setBoneSetupOnly(app.doc, bone, t, new Set(app.selectedBones()));
+      app.onBoneOnlyMove?.(); // the toolbar's one-time tip
+    } else app.doc.bones[bone].setup = t;
     // A bone driven by a transform constraint stays where it is moved: the move sets the offsets.
     const name = app.doc.bones[bone].name;
     for (const d of constraintsKeeping(app.doc, name)) keepPoseOffsets(app.doc, d, name);
@@ -277,14 +282,89 @@ export function reparentBoneKeepWorld(app, bone, newParent) {
   app.changed();
 }
 
-/** Moves a slot to another bone while keeping its attachments in place (setup pose). */
+/** Moves a slot to another bone while keeping its attachments in place (setup pose), the ones
+ *  other skins define for it included. */
 export function setSlotBoneKeepWorld(app, slot, newBone) {
   const setup = new Pose(app.doc);
   const old = setup.world[app.doc.slots[slot].bone];
   const toNew = setup.world[newBone].inverse().mul(old);
   for (const att of app.doc.slots[slot].attachments) moveAttachment(att, toNew);
+  for (const skin of app.doc.skins) for (const e of skin.slots) if (e.slot === slot) for (const att of e.attachments) moveAttachment(att, toNew);
   app.doc.slots[slot].bone = newBone;
   app.changed();
+}
+
+/** Renames a bone, and every constraint and onion-skin setting that names it. False when the name
+ *  is empty or taken. */
+export function renameBone(app, bone, name) {
+  name = name.trim();
+  const b = app.doc.bones[bone];
+  if (!b || !name || name === b.name || app.doc.boneIndex(name) !== null) return false;
+  renameBoneRefs(app.doc, b.name, name);
+  renameOnionBone(app.onion, b.name, name); // per-bone onion settings are keyed by name
+  b.name = name;
+  app.changed();
+  return true;
+}
+
+/** Renames a slot, and every constraint that names it. False when the name is empty or taken. */
+export function renameSlot(app, slot, name) {
+  name = name.trim();
+  const s = app.doc.slots[slot];
+  if (!s || !name || name === s.name || app.doc.slotIndex(name) !== null) return false;
+  renameSlotRefs(app.doc, s.name, name);
+  s.name = name;
+  app.changed();
+  return true;
+}
+
+export { selectRelated } from './selection.js';
+
+/**
+ * Duplicates the selected bone with its branch and slots (Setup mode); `mirror` makes the other
+ * side's copy. Selects the copy.
+ */
+export function duplicateSelection(app, { mirror = false } = {}) {
+  const bone = selBone(app.sel) ?? (selSlot(app.sel) !== null ? app.doc.slots[selSlot(app.sel)].bone : null);
+  if (app.mode !== Mode.Setup) return app.setStatus(statusMessage('Duplicate in Setup mode (Tab)'));
+  if (bone === null || bone === 0) return app.setStatus(statusMessage('Select a bone to duplicate (not the root)'));
+  const name = app.doc.bones[bone].name;
+  const copy = duplicateBranch(app.doc, bone, { mirror });
+  app.select({ bone: copy });
+  app.setStatus(mirror ? statusMessage('Mirrored {name} to {copy}', { name, copy: app.doc.bones[copy].name }) : statusMessage('Duplicated {name} as {copy}', { name, copy: app.doc.bones[copy].name }));
+  app.changed();
+  return copy;
+}
+
+/** Copies the pose of the selected bones (every bone when none is selected) at the current frame. */
+export function copyPoseOfSelection(app) {
+  app.poseClipboard = copyPose(app.doc, app.pose(), app.selectedBones());
+  const n = Object.keys(app.poseClipboard).length;
+  app.setStatus(statusMessage('Copied the pose of {count} bone(s)', { count: n }));
+}
+
+/** Pastes the copied pose at the current frame (keys in Animate mode, the setup pose in Setup mode). */
+export function pastePoseHere(app, { flipped = false } = {}) {
+  if (!app.poseClipboard) return app.setStatus(statusMessage('Copy a pose first'));
+  const targets = pastePose(app.doc, app.poseClipboard, { flipped });
+  if (app.mode === Mode.Animate) ensureAnimation(app);
+  for (const [bone, t] of targets) {
+    const full = { ...app.pose().local[bone], ...t };
+    if (app.mode === Mode.Animate) keyBoneTransform(app, bone, full);
+    else app.doc.bones[bone].setup = { ...app.doc.bones[bone].setup, ...t };
+  }
+  app.setStatus(flipped ? statusMessage('Pasted the pose flipped on {count} bone(s)', { count: targets.length }) : statusMessage('Pasted the pose on {count} bone(s)', { count: targets.length }));
+  app.changed();
+}
+
+/** Selects every key of a bone's (or a slot's) tracks in the current animation; returns how many. */
+export function selectKeysOf(app, { bone = null, slot = null }) {
+  const anim = app.currentAnimation();
+  const tl = !anim ? null : bone !== null ? anim.boneTimeline(bone) : anim.slotTimeline(slot);
+  const keys = tl ? Object.entries(tl).filter(([k, v]) => k !== 'bone' && k !== 'slot' && Array.isArray(v)).flatMap(([, v]) => v) : [];
+  app.selectedKeys = new Set(keys);
+  app.changed();
+  return keys.length;
 }
 
 /** Returns whether `channel` of `bone` has a key at the current frame. */

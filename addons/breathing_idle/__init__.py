@@ -79,8 +79,8 @@ def register():
         upper = [b for b in bones if _match(b, UPPER_ARM) and not _match(b, LOWER_ARM) and b.name not in names]
         lower = [b for b in bones if _match(b, LOWER_ARM) and b.name not in names]
         arm_names = {b.name for b in upper + lower}
-        arm_ik = [c for c in rigby.constraints() if c.type == "ik" and c.settings.get("mix", 1) > 0 and any(b.name in arm_names for b in c.bones)]
-        driven = {b.name for c in arm_ik for b in c.bones}
+        arm_ik = [c for c in rigby.constraints() if c.type == "ik" and c.settings.get("mix", 1) > 0 and any(getattr(b, "name", b) in arm_names for b in c.bones)]
+        driven = {getattr(b, "name", b) for c in arm_ik for b in c.bones}
 
         height = _height()
         rise = min(max(height * 0.012, 1.0), 12.0) if height else 3.0

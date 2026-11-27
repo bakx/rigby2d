@@ -9,8 +9,8 @@ import { poseAt, channelValue } from './keying.js';
 import { Affine, toAffine, transform } from './math.js';
 import { autoWeights, normalizeWeights } from './meshgeom.js';
 import { generateMesh } from './meshgen.js';
-import { makeAttachment, makeSlot, uniqueName } from './model.js';
-import { Pose, localFromWorld } from './pose.js';
+import { makeAttachment, makeSlot, moveAttachment, uniqueName } from './model.js';
+import { Pose, applyDrawOrder, localFromWorld } from './pose.js';
 
 export const indexOf = (list, name, what) => {
   const i = list.findIndex((v) => v.name === name);
@@ -225,14 +225,14 @@ export function attachmentOf(doc, { slot, attachment, skin }) {
   const list = attachmentList(doc, si, skin);
   return { si, list, att: list[indexOf(list, attachment, 'attachment')] };
 }
-export function addAttachment(doc, { slot, name, image, x = 0, y = 0, rotation = 0, skin, space = 'local', replace = false }) {
+export function addAttachment(doc, { slot, name, image, x = 0, y = 0, rotation = 0, scale_x = 1, scale_y = 1, skin, space = 'local', replace = false }) {
   validName(name);
   const si = slotOf(doc, slot);
   const list = attachmentList(doc, si, skin, true);
   const old = list.findIndex((a) => a.name === name);
   if (old >= 0 && !replace) throw new Error(`Attachment '${name}' already exists.`);
   const img = doc.images[indexOf(doc.images, image, 'image')];
-  let offset = transform(number(x, 'x'), number(y, 'y'), number(rotation, 'rotation'));
+  let offset = { ...transform(number(x, 'x'), number(y, 'y'), number(rotation, 'rotation')), scale_x: number(scale_x, 'scale_x'), scale_y: number(scale_y, 'scale_y') };
   if (space === 'world') offset = new Pose(doc).world[doc.slots[si].bone].inverse().mul(toAffine(offset)).decompose();
   const att = makeAttachment(name, image, offset, img.width, img.height);
   if (old >= 0) list[old] = att; else list.push(att);
@@ -471,4 +471,154 @@ export function mirrorBones(doc, { bones, duplicate = false, names = {} }) {
   }
   invalidateConstraints(doc);
   return { bones: duplicate ? result : ids.map((i) => doc.bones[i].name), duplicated: duplicate };
+}
+
+// ---- slots, draw order and path attachments ----------------------------------------------------
+
+/** Where a slot goes in draw order: just after `after` or just before `before` (default: on top). */
+function drawIndex(doc, { after, before }) {
+  if (after !== undefined && before !== undefined) throw new Error("Give either 'after' or 'before', not both.");
+  if (after !== undefined) return slotOf(doc, after) + 1;
+  if (before !== undefined) return slotOf(doc, before);
+  return doc.slots.length;
+}
+
+/** Adds an empty slot on `bone`, placed in draw order after/before another slot (default: on top). */
+export function addSlot(doc, { name, bone, after, before }) {
+  validName(name);
+  if (doc.slots.some((s) => s.name === name)) throw new Error(`Slot '${name}' already exists.`);
+  const at = drawIndex(doc, { after, before });
+  doc.slots.push(makeSlot(name, boneOf(doc, bone), null));
+  doc.moveSlot(doc.slots.length - 1, at);
+  return { slot: name, bone, drawIndex: at };
+}
+
+/** Moves a slot in setup draw order to just after/before another slot. */
+export function moveSlotTo(doc, { slot, after, before }) {
+  const from = slotOf(doc, slot);
+  let to = drawIndex(doc, { after, before });
+  if (to > from) to--;
+  doc.moveSlot(from, to);
+  return { slot, drawIndex: to };
+}
+
+/** Moves a slot to another bone, keeping its attachments where they are in the setup pose. */
+export function setSlotBone(doc, { slot, bone }) {
+  const si = slotOf(doc, slot), bi = boneOf(doc, bone);
+  const pose = new Pose(doc), s = doc.slots[si];
+  const toNew = pose.world[bi].inverse().mul(pose.world[s.bone]);
+  const lists = [s.attachments, ...doc.skins.flatMap((k) => k.slots.filter((e) => e.slot === si).map((e) => e.attachments))];
+  for (const list of lists) for (const att of list) moveAttachment(att, toNew);
+  s.bone = bi;
+  return { slot, bone };
+}
+
+/**
+ * Keys a draw order: `moves` are applied in turn to the setup order ({slot, after|before}); none
+ * (or reset: true) keys the setup order back. Stored as skeleton-JSON offsets that reproduce it.
+ */
+export function keyDrawOrder(doc, { animation, time, moves = [], reset = false }) {
+  const anim = animOf(doc, animation);
+  number(time, 'time', 0);
+  const order = doc.slots.map((_, i) => i);
+  for (const m of reset ? [] : moves) {
+    const s = slotOf(doc, m.slot);
+    order.splice(order.indexOf(s), 1);
+    if ((m.after === undefined) === (m.before === undefined)) throw new Error("Each move gives either 'after' or 'before'.");
+    const ref = order.indexOf(slotOf(doc, m.after ?? m.before));
+    if (ref < 0) throw new Error(`Slot '${m.slot}' cannot be placed relative to itself.`);
+    order.splice(m.after !== undefined ? ref + 1 : ref, 0, s);
+  }
+  let offsets = null;
+  if (!order.every((s, i) => s === i)) {
+    const all = order.map((s, i) => ({ slot: s, offset: i - s })).sort((a, b) => a.slot - b.slot);
+    const moved = all.filter((o) => o.offset !== 0);
+    offsets = applyDrawOrder(doc.slots.length, moved).every((s, i) => s === order[i]) ? moved : all;
+  }
+  setKey(anim.drawOrder, time, offsets, 'stepped');
+  anim.duration = Math.max(anim.duration, time);
+  return { animation, time, order: order.map((i) => doc.slots[i].name) };
+}
+
+function bezierLength(p0, p1, p2, p3, steps = 64) {
+  let len = 0, prev = p0;
+  for (let k = 1; k <= steps; k++) {
+    const t = k / steps, u = 1 - t;
+    const p = [0, 1].map((j) => u * u * u * p0[j] + 3 * u * u * t * p1[j] + 3 * u * t * t * p2[j] + t * t * t * p3[j]);
+    len += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    prev = p;
+  }
+  return len;
+}
+
+/**
+ * Adds a path attachment (a chain of cubic beziers) to a slot. `points` are world setup-pose points
+ * in skeleton-JSON path order: for each anchor its in handle, the anchor and its out handle (an open
+ * path ignores the first in and last out handle). `weights` (one [{bone, weight}] list per point)
+ * binds the path to bones, as for a mesh; without them it follows the slot's bone.
+ */
+export function addPathAttachment(doc, { slot, name, points, weights, closed = false, constant_speed = true, skin }) {
+  validName(name);
+  const si = slotOf(doc, slot);
+  if (!Array.isArray(points) || points.length < 6 || points.length % 3) throw new Error('points: 3 per anchor (in handle, anchor, out handle), at least 2 anchors.');
+  for (const p of points) if (!Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite)) throw new Error('Each point is [x, y].');
+  if (weights && weights.length !== points.length) throw new Error('weights: one list per point.');
+  const list = attachmentList(doc, si, skin, true);
+  if (list.some((a) => a.name === name)) throw new Error(`Attachment '${name}' already exists.`);
+  const pose = new Pose(doc);
+  const att = { name, type: 'path', image: name, color: [1, 0.5, 0, 1], vertexCount: points.length, closed: !!closed, constantSpeed: !!constant_speed, vertices: null, weights: null, lengths: [] };
+  if (weights) {
+    att.weights = weights.map((ws, v) => {
+      const total = ws.reduce((t, w) => t + number(w.weight, 'weight', 0), 0);
+      if (!ws.length || total <= 0) throw new Error(`Point ${v} needs at least one weight above 0.`);
+      return ws.map((w) => { const b = boneOf(doc, w.bone), [x, y] = pose.world[b].inverse().apply(points[v]); return { bone: b, x, y, weight: w.weight / total }; });
+    });
+  } else {
+    const inv = pose.world[doc.slots[si].bone].inverse();
+    att.vertices = points.flatMap((p) => inv.apply(p));
+  }
+  const anchors = points.length / 3, curves = closed ? anchors : anchors - 1;
+  let total = 0;
+  for (let c = 0; c < curves; c++) {
+    const a = c * 3 + 1, b = ((c + 1) % anchors) * 3 + 1;
+    total += bezierLength(points[a], points[a + 1], points[b - 1 < 0 ? points.length - 1 : b - 1], points[b]);
+    att.lengths.push(total);
+  }
+  list.push(att);
+  return { slot, attachment: name, vertexCount: points.length, length: total };
+}
+
+/** Keys a slot's alpha (0..1) or whole colour (#rrggbb or #rrggbbaa) in an animation. */
+export function keySlotColor(doc, { animation, slot, time, alpha, color, curve: easing = 'linear' }) {
+  const anim = animOf(doc, animation), si = slotOf(doc, slot);
+  number(time, 'time', 0);
+  if ((alpha === undefined) === (color === undefined)) throw new Error("Give either 'alpha' or 'color'.");
+  const tl = anim.slotTimelineMut(si);
+  let keys, value;
+  if (alpha !== undefined) { keys = tl.alpha; value = number(alpha, 'alpha', 0, 1); }
+  else {
+    const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color);
+    if (!m) throw new Error('color must be #rrggbb or #rrggbbaa.');
+    const n = parseInt(m[1], 16);
+    keys = tl.color; value = [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, m[2] ? parseInt(m[2], 16) / 255 : 1];
+  }
+  const i = setKey(keys, time, value);
+  keys[i].curve = curve(easing);
+  anim.duration = Math.max(anim.duration, time);
+  return { animation, slot, time, value };
+}
+
+/** Deletes an attachment and its deform keys. Refuses while an attachment key or a slot's setup still shows it. */
+export function deleteAttachment(doc, { slot, attachment, skin }) {
+  const { si, list, att } = attachmentOf(doc, { slot, attachment, skin });
+  const def = !skin || skin === 'default';
+  if (def && doc.slots[si].attachment === attachment) throw new Error(`Slot '${slot}' shows '${attachment}' in the setup pose; set_slot another first.`);
+  for (const a of doc.animations) {
+    const tl = a.slotTimeline(si);
+    if (tl?.attachment.some((k) => k.value === attachment)) throw new Error(`Animation '${a.name}' keys '${attachment}' in '${slot}'.`);
+  }
+  list.splice(list.indexOf(att), 1);
+  const skinKey = def ? null : skin;
+  for (const a of doc.animations) a.deform = a.deform.filter((t) => !(t.slot === si && t.attachment === attachment && t.skin === skinKey));
+  return { slot, deleted: attachment };
 }

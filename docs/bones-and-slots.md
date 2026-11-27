@@ -21,14 +21,31 @@ Bones are created in **Setup mode**:
 Every project has a `root` bone at the origin. <kbd>Delete</kbd> removes the selected bone together
 with its children.
 
+### Duplicating and mirroring
+
+In Setup mode, select a bone and use *Edit ▸ Duplicate bone* (<kbd>Ctrl</kbd>+<kbd>D</kbd>;
+<kbd>Shift</kbd>+<kbd>D</kbd> with the Blender-like keys) or the tree's right-click menu. The copy has
+every bone below it and their slots, under the same parent, with `_copy` added to the names.
+
+*Edit ▸ Mirror to the other side* (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>) builds the other
+side from one: select `arm_l`, and you get `arm_r` with its hand, mirrored across the vertical line
+through the root, with the images flipped and weighted meshes moved to the new bones. Side names
+follow the usual patterns (`_l`/`_r`, `.L`/`.R`, `l_`/`r_`, `left`/`right`); a name with no side gets
+`_mirror`, and a name that's already taken gets a number.
+
 ### Moving a joint after the rig is built
 
 To fix a joint that is in the wrong place, select the bone in Setup mode and move, turn or scale it
-with the Translate, Rotate or Scale tool (or type new values in the inspector). With **Bone only** on
-(the pin button on the viewport toolbar, on by default), only the bone changes: its child bones and its
-images, including the parts of weighted meshes bound to it, stay where they are drawn. Turn **Bone
-only** off to carry everything along instead, for example to place a whole arm. Child bones selected
+with the Translate, Rotate or Scale tool (or type new values in the inspector). Normally the bone carries
+its child bones and images along, for example to place a whole arm. Turn on **Bone only** (the pin
+button on the viewport toolbar, Setup mode) to change only the bone: its child bones and its images,
+including the parts of weighted meshes bound to it, stay where they are drawn. Child bones selected
 together with it always move along. The Pose tool always turns whole chains.
+
+**Bone only** is off by default and remembered between sessions. While it's on, its button is
+highlighted and the menu bar shows **Bone only on** (click it to turn Bone only off), like the
+*Onion skin on* notice. The first time you move a bone with it on, a short tip over the button
+explains it and offers to turn it off.
 
 ### Point bones
 

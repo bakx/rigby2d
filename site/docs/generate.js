@@ -40,14 +40,10 @@ function typeOf(p) {
 
 /** Every MCP tool: what it does and its parameters, in the order the server lists them. */
 async function mcpTools() {
-  const { Workspace, createTools } = await import('../../src/mcp/tools.js');
-  const { createEditTools } = await import('../../src/mcp/edits.js');
-  const { createFilmTools } = await import('../../src/mcp/film.js');
-  const { createRiggingTools } = await import('../../src/mcp/rigging.js');
-  const { createScriptTools } = await import('../../src/mcp/scripting.js');
-  const { createSceneTools } = await import('../../src/mcp/scene.js');
-  const ws = new Workspace([repo]);
-  const tools = [...createTools(ws), ...createEditTools(ws), ...createFilmTools(ws), ...createRiggingTools(ws), ...createSceneTools(ws), ...createScriptTools(ws)];
+  const { Workspace } = await import('../../src/mcp/tools.js');
+  const { createToolRegistry } = await import('../../src/mcp/registry.js');
+  const ws = await Workspace.open([process.cwd()]);
+  const tools = createToolRegistry(ws);
   const out = [`The server has **${tools.length} tools**. Parameters marked **required** must be given; the others are optional.`, ''];
   for (const t of tools) {
     const writes = t.annotations?.readOnlyHint === false;

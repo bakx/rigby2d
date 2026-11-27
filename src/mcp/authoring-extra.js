@@ -7,7 +7,7 @@ import * as author from '../core/authoring.js';
 import { cutout } from '../core/cutout.js';
 import { uniqueName } from '../core/model.js';
 import { alphaOf, decodePng, encodePng } from './png.js';
-import { EDIT, OUTPUT, OVERWRITE, edit } from './edits.js';
+import { CURVE, EDIT, OUTPUT, OVERWRITE, edit } from './edits.js';
 import { PATH } from './tools.js';
 import { ToolError } from './protocol.js';
 
@@ -86,7 +86,7 @@ export function createAuthoringTools(ws) {
     handler(args) { return edit(ws, args, (doc, p) => this.apply(doc, args, p)); },
   });
   const tools = [
-    make('add_attachment', 'Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.', { slot: str, name: str, image_file: str, x: num, y: num, rotation: num, skin: str, space: { type: 'string', enum: ['local', 'world'] }, cutout: CUTOUT }, ['slot', 'name', 'image_file'], async (doc, args, p) => author.addAttachment(doc, { ...args, image: await importImage(ws, p, args.image_file, args.cutout) })),
+    make('add_attachment', 'Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. scale_x/scale_y size the image (0.25 shows a 4x image at 1x). Does not change slot visibility.', { slot: str, name: str, image_file: str, x: num, y: num, rotation: num, scale_x: num, scale_y: num, skin: str, space: { type: 'string', enum: ['local', 'world'] }, cutout: CUTOUT }, ['slot', 'name', 'image_file'], async (doc, args, p) => author.addAttachment(doc, { ...args, image: await importImage(ws, p, args.image_file, args.cutout) })),
     make('replace_image', 'Replace the pixels of an attachment with a PNG/JPG/WebP (optionally cut out of its flat background; keep crop none so the geometry still fits), preserving its region geometry or mesh and weights.', { ...mesh, image_file: str, cutout: CUTOUT }, ['slot', 'attachment', 'image_file'], async (doc, args, p) => {
       const { att } = author.attachmentOf(doc, args);
       att.image = await importImage(ws, p, args.image_file, args.cutout);
@@ -100,6 +100,13 @@ export function createAuthoringTools(ws) {
         store: (name, rgba) => p.entries.set(`images/${name}.png`, encodePng(rgba)),
       });
     }),
+    make('add_slot', 'Add an empty slot on a bone, placed in draw order just after or before another slot (default: on top). Give it attachments with add_attachment or add_path_attachment.', { name: str, bone: str, after: str, before: str }, ['name', 'bone'], author.addSlot),
+    make('move_slot', 'Move a slot in setup draw order to just after or before another slot.', { slot: str, after: str, before: str }, ['slot'], author.moveSlotTo),
+    make('set_slot_bone', 'Move a slot (and its attachments, which keep their setup-pose place) to another bone.', { slot: str, bone: str }, ['slot', 'bone'], author.setSlotBone),
+    make('set_draw_order_key', 'Key a draw order in an animation: moves ({slot, after|before}) are applied in turn to the setup order; none (or reset: true) keys the setup order back. Stepped.', { animation: str, time: { ...num, minimum: 0 }, moves: { type: 'array', items: { type: 'object', properties: { slot: str, after: str, before: str }, required: ['slot'], additionalProperties: false } }, reset: { type: 'boolean' } }, ['animation', 'time'], author.keyDrawOrder),
+    make('set_slot_color_key', "Key a slot's alpha (0..1) or colour (#rrggbb / #rrggbbaa) in an animation, e.g. to show or hide whole slots stepped (alpha 0/1, curve stepped) while attachment keys stay free for swaps.", { animation: str, slot: str, time: { ...num, minimum: 0 }, alpha: { ...num, minimum: 0, maximum: 1 }, color: str, curve: CURVE }, ['animation', 'slot', 'time'], author.keySlotColor),
+    make('delete_attachment', 'Delete an attachment (and its deform keys) from a slot. Refused while the setup pose or an attachment key still shows it.', { slot: str, attachment: str, skin: str }, ['slot', 'attachment'], author.deleteAttachment),
+    make('add_path_attachment', 'Add a path attachment (cubic beziers) for path constraints. points are world setup-pose points, 3 per anchor in skeleton-JSON order: in handle, anchor, out handle (an open path ignores the first in and last out handle). weights, one [{bone, weight}] list per point, bind it to bones like a mesh; without them it follows the slot bone. Curve lengths are computed.', { slot: str, name: str, points: { type: 'array', items: { type: 'array', items: num, minItems: 2, maxItems: 2 }, minItems: 6 }, weights: { type: 'array', items: { type: 'array', items: { type: 'object', properties: { bone: str, weight: { ...num, minimum: 0 } }, required: ['bone', 'weight'], additionalProperties: false } } }, closed: { type: 'boolean' }, constant_speed: { type: 'boolean' }, skin: str }, ['slot', 'name', 'points'], author.addPathAttachment),
     make('add_event', 'Add an event definition with default values.', { name: str, int: { type: 'integer' }, float: num, string: str }, ['name'], author.addEvent),
   ];
   // Bind handlers: callers often extract them from the table.

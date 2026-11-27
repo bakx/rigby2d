@@ -61,13 +61,24 @@ This table is generated from the editor's keymap, so it always matches the curre
 | Key everything shown in the dopesheet | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> |
 | Toggle auto key | – | – |
 | Deselect | <kbd>Esc</kbd> | <kbd>Alt</kbd>+<kbd>A</kbd> or <kbd>Esc</kbd> |
-| Fit the skeleton in view | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | <kbd>F</kbd> or <kbd>Home</kbd> |
+| Fit the skeleton in view | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | <kbd>F</kbd> |
+| Frame the selection | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> | <kbd>.</kbd> |
+| Select all bones | <kbd>Ctrl</kbd>+<kbd>A</kbd> | <kbd>A</kbd> or <kbd>Ctrl</kbd>+<kbd>A</kbd> |
+| Select the parent bone | <kbd>[</kbd> | <kbd>[</kbd> |
+| Select the child bones | <kbd>]</kbd> | <kbd>]</kbd> |
+| Select the whole branch | <kbd>Ctrl</kbd>+<kbd>]</kbd> | <kbd>Ctrl</kbd>+<kbd>]</kbd> |
+| Duplicate the selected bone with its branch | <kbd>Ctrl</kbd>+<kbd>D</kbd> | <kbd>Shift</kbd>+<kbd>D</kbd> |
+| Mirror the selected bone to the other side | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> |
+| Copy pose | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> |
+| Paste pose | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> |
+| Paste pose flipped | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> |
 | Zoom to 100% | <kbd>Ctrl</kbd>+<kbd>F</kbd> | <kbd>Ctrl</kbd>+<kbd>F</kbd> |
 | Hide or show overlays | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd> | <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>Z</kbd> |
 | Show or hide bones | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> |
 | Cut selected keys | <kbd>Ctrl</kbd>+<kbd>X</kbd> | <kbd>Ctrl</kbd>+<kbd>X</kbd> |
 | Copy selected keys | <kbd>Ctrl</kbd>+<kbd>C</kbd> | <kbd>Ctrl</kbd>+<kbd>C</kbd> |
 | Paste keys at the playhead | <kbd>Ctrl</kbd>+<kbd>V</kbd> | <kbd>Ctrl</kbd>+<kbd>V</kbd> |
+| Paste keys reversed at the playhead | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> |
 | Delete selected key, bone or slot | <kbd>Delete</kbd> or <kbd>Backspace</kbd> | <kbd>Delete</kbd> or <kbd>Backspace</kbd> |
 | Undo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | <kbd>Ctrl</kbd>+<kbd>Z</kbd> |
 | Redo | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> |
@@ -77,6 +88,7 @@ This table is generated from the editor's keymap, so it always matches the curre
 | Export | <kbd>Ctrl</kbd>+<kbd>E</kbd> | <kbd>Ctrl</kbd>+<kbd>E</kbd> |
 | Close menus | <kbd>Esc</kbd> | <kbd>Esc</kbd> |
 | Preferences | <kbd>Ctrl</kbd>+<kbd>,</kbd> | <kbd>Ctrl</kbd>+<kbd>,</kbd> |
+| Find a command | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | <kbd>F3</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> |
 
 <!-- /generated:shortcuts -->
 
@@ -105,6 +117,6 @@ This table is generated from the editor's keymap, so it always matches the curre
 
 | Keys | Does |
 | --- | --- |
-| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Load a saved layout (*View ▸ Layouts*). |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Load a saved layout (*View ▸ Panels*). |
 | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Run the script in the script editor. |
 | <kbd>/</kbd> | Search these docs. |

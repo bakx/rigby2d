@@ -274,9 +274,17 @@ test('mcp server: answers over stdio', async () => {
   await new Promise((resolve) => child.on('close', resolve));
   const byId = new Map(lines.map((m) => [m.id, m]));
   assert.equal(byId.get(1).result.serverInfo.name, 'rigby2d');
-  const names = byId.get(2).result.tools.map((t) => t.name);
+  const listed = byId.get(2).result.tools;
+  const names = listed.map((t) => t.name);
   assert.equal(new Set(names).size, names.length, 'tool names are unique');
   for (const name of ['add_constraint', 'update_art', 'make_mesh', 'render_preview', 'render_video', 'bake_physics', 'merge_parts']) assert.ok(names.includes(name), name);
+  const slotTools = ['add_slot', 'move_slot', 'set_slot_bone', 'add_path_attachment', 'delete_attachment', 'set_draw_order_key', 'set_slot_color_key'];
+  for (const name of ['import_aseprite', ...slotTools]) assert.ok(names.includes(name), name);
+  const schema = (name) => listed.find((tool) => tool.name === name).inputSchema;
+  assert.equal(schema('add_attachment').properties.scale_x.type, 'number');
+  assert.equal(schema('add_attachment').properties.scale_y.type, 'number');
+  const ops = schema('batch_edit').properties.operations.items.properties.op.enum;
+  for (const name of slotTools) assert.ok(ops.includes(name), name);
   assert.equal(byId.get(3).result.structuredContent.counts.bones, 11);
   assert.equal(byId.get(null).error.code, ErrorCode.PARSE_ERROR);
   assert.equal(lines.length, 4);

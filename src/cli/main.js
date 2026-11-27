@@ -7,13 +7,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-import { createEditTools } from '../mcp/edits.js';
-import { createFilmTools } from '../mcp/film.js';
 import { ToolError, checkArguments } from '../mcp/protocol.js';
-import { createRiggingTools } from '../mcp/rigging.js';
-import { createSceneTools } from '../mcp/scene.js';
-import { createScriptTools } from '../mcp/scripting.js';
-import { Workspace, createTools } from '../mcp/tools.js';
+import { Workspace } from '../mcp/tools.js';
+import { createToolRegistry } from '../mcp/registry.js';
 import { UsageError, parseArgs, toolArguments } from './args.js';
 import { exportWithAtlas, psdToWorkfile, toWorkfile } from './project.js';
 import { RENDER_OPTIONS, RenderError } from '../editor/render/plan.js';
@@ -30,7 +26,7 @@ class OpenWorkspace extends Workspace {
 /** Every MCP tool, by name, bound to an open workspace rooted at the current folder. */
 export function toolTable(cwd = process.cwd()) {
   const ws = new OpenWorkspace([cwd]);
-  const tools = [...createTools(ws), ...createEditTools(ws), ...createFilmTools(ws), ...createRiggingTools(ws), ...createSceneTools(ws), ...createScriptTools(ws)];
+  const tools = createToolRegistry(ws);
   return new Map(tools.map((t) => [t.name, t]));
 }
 
@@ -208,7 +204,8 @@ export const COMMANDS = {
     summary: 'Export for games: skeleton + packed atlas, a Defold model, or sprite sheets',
     usage: 'rigby export <project> --format json|skel|defold|spritesheet --out <file|folder> [options]',
     details:
-      'json, skel   --out is the skeleton file; <name>.atlas and <name>.png are packed next to it.\n' +
+      'json, skel   --out is the skeleton file; <name>.atlas and <name>.png are packed next to it\n' +
+      '             (and <name>_2.png, ... when the images need more than one 8192px page).\n' +
       'defold       --out is a folder in a Defold project: .rigbyskel, .atlas, images/, .rigbymodel and .go.\n' +
       'spritesheet  --out is a folder: frames rendered into sheets (--sheet json|defold|frames).\n' +
       'Exports fail before writing files when required artwork is missing.',

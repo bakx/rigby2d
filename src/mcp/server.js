@@ -8,12 +8,8 @@
 import fs from 'node:fs';
 
 import { createServer, serveStdio } from './protocol.js';
-import { createEditTools } from './edits.js';
-import { createFilmTools } from './film.js';
-import { createRiggingTools } from './rigging.js';
-import { createScriptTools } from './scripting.js';
-import { createSceneTools } from './scene.js';
-import { Workspace, createTools } from './tools.js';
+import { createToolRegistry } from './registry.js';
+import { Workspace } from './tools.js';
 
 const { version } = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 const log = (text) => process.stderr.write(`rigby2d-mcp: ${text}\n`);
@@ -82,13 +78,15 @@ async function main() {
       'batch_edit combines editing operations in one atomic save, including constraints, skins, attachments, meshes, poses and face controls. ' +
       'set_bone_key supports space: world for translation and rotation; set_ik_target_key moves an IK target directly. ' +
       'add_constraint and set_constraint_key author and animate IK, transform, path, physics and slider constraints. ' +
+      'Use add_slot, move_slot and set_slot_bone to place slots. add_path_attachment builds weighted or unweighted paths. ' +
+      'set_draw_order_key and set_slot_color_key animate slot order and tint. import_aseprite brings in layered pixel art and frame animations. ' +
       'run_script runs Python with the rigby API (bones, slots, animations, constraints, meshes, skins and events; dry_run: true for queries). ' +
       'Scenes: add_actor puts characters (other .rigby files) on a stage, add_clip places their animations on the scene shots, set_actor and set_layer_depth stage them. autorig rigs layered artwork (a PSD or an unrigged .rigby) in one step; detect_parts previews it. retarget_animation copies animations between characters (map_bones previews the bone matching). ' +
       'update_art re-imports a PSD while retaining rigging and animation. autorig accepts joints in canvas pixels, also from <basename>.joints.json or PSD layers named joint:<name>. merge_parts joins rigid pieces into one bending mesh. ' +
       'render_preview writes a PNG strip/grid or GIF; render_video writes WebM/MP4 using FFmpeg. bake_physics writes simulated bone keys. ' +
       'Read AGENTS.md or https://rigby2d.com/llms.txt for conventions and limitations. ' +
       `Files must be inside the workspace: ${workspace.roots.join(', ')}.`,
-    tools: [...createTools(workspace), ...createEditTools(workspace), ...createFilmTools(workspace), ...createRiggingTools(workspace), ...createSceneTools(workspace), ...createScriptTools(workspace)],
+    tools: createToolRegistry(workspace),
     log,
   });
   log(`ready (workspace: ${workspace.roots.join(', ')})`);

@@ -145,9 +145,13 @@ function menuEntry(it) {
       title: it.title ?? null,
       disabled: !!it.disabled,
       onclick: () => {
+        it.onpreview?.(false);
         closeMenu();
         it.action();
       },
+      // `onpreview(on)`: called as the pointer enters and leaves the item, to preview what it does.
+      onpointerenter: it.onpreview ? () => it.onpreview(true) : null,
+      onpointerleave: it.onpreview ? () => it.onpreview(false) : null,
     },
     // `checked` (true or false): the item is a choice; the current one shows a check.
     it.checked === undefined ? h('span', null, it.label) : h('span', { class: 'item-label' }, h('span', { class: 'item-check' }, it.checked ? icon('check', 14) : null), it.label),
@@ -166,8 +170,21 @@ export function checkItem(label, checked, onChange, { shortcut = null, title = n
   return h('label', { class: 'item check-item', title }, h('span', { class: 'item-label' }, box, label), shortcut ? h('span', { class: 'shortcut' }, shortcut) : null);
 }
 
+/** A small heading over a group of menu items (not clickable). */
+export function menuHeading(text) {
+  return h('div', { class: 'menu-heading', role: 'presentation' }, text);
+}
+
+/** A line of muted explanation under the menu item before it (not clickable). */
+export function menuNote(text) {
+  return h('div', { class: 'menu-note', role: 'presentation' }, text);
+}
+
 export function submenuItem(label, items, { title } = {}) {
   const btn = h('button', { class: 'item submenu', title: title ?? null }, h('span', null, label), h('span', { class: 'shortcut submenu-arrow' }, icon('chevron-right', 14)));
+  // Kept for command search (commandsearch.js), which lists the items of every submenu too.
+  btn.submenuLabel = label;
+  btn.submenuItems = items;
   let child = null;
   const closeChild = () => {
     child?.remove();

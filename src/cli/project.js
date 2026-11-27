@@ -5,12 +5,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { atlasFilter, writeAtlas } from '../core/atlas.js';
+import { atlasFilter } from '../core/atlas.js';
 import { encodeKtx2 } from '../core/ktx2.js';
 import { writeSkeletonBinary } from '../core/binary.js';
 import { writeSkeletonJson } from '../core/interop.js';
-import { usedImages } from '../editor/io.js';
-import { pack } from '../core/pack.js';
+import { packAtlas, usedImages } from '../core/pack.js';
 import { zip } from '../editor/zip.js';
 import { decodePng, encodePng } from '../mcp/png.js';
 import { ToolError } from '../mcp/protocol.js';
@@ -81,10 +80,12 @@ export async function psdToWorkfile(input, output, { force = false } = {}) {
 
 /**
  * Exports skeleton JSON (`version` 3.8 / 4.2 / 4.3) or binary .skel (by the output extension) with
- * every image the skeleton uses packed into `<name>.atlas` and `<name>.png` next to it.
- * Returns { output, atlas, page, size, regions, missingImages, warnings }.
+ * every image the skeleton uses packed into `<name>.atlas` and `<name>.png` next to it (and
+ * `<name>_2.png`, ... when the images need more than one 8192px page).
+ * `pageSize` (the largest page, 8192 by default) is for tests.
+ * Returns { output, format, version, files, atlasSize, atlasPages, regions, missingImages, warnings }.
  */
-export async function exportWithAtlas(input, output, { version = '4.3', force = false, texture = 'png', codec = 'etc1s', quality = 128, mipmaps = false, zstd = true, fallback = false } = {}) {
+export async function exportWithAtlas(input, output, { version = '4.3', force = false, pageSize = 8192, texture = 'png', codec = 'etc1s', quality = 128, mipmaps = false, zstd = true, fallback = false } = {}) {
   if (!['png', 'ktx2'].includes(texture)) throw new ToolError('Texture must be png or ktx2.');
   const ext = path.extname(output).toLowerCase();
   if (ext !== '.json' && ext !== '.skel') throw new ToolError('The output must end in .json or .skel.');
@@ -93,14 +94,11 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
   if (p.doc.scene) throw new ToolError('Scenes are exported from the editor (File > Export scene).');
   const base = output.slice(0, -ext.length);
   const atlasPath = `${base}.atlas`;
-  const pngPath = `${base}.png`;
-  const pagePath = `${base}.${texture}`;
   if (path.resolve(output) === path.resolve(p.file)) throw new ToolError('The output must be a different file than the input.');
-  await checkTargets([output, atlasPath, pagePath, ...(texture === 'ktx2' && fallback ? [pngPath] : [])], force);
+  await checkTargets([output, atlasPath], force);
 
   const used = usedImages(p.doc);
   const found = await projectImages(p, new Set(used));
-  const items = used.filter((n) => found.has(n)).map((name) => ({ name, ...rgbaOf(found.get(name)) }));
   const missing = used.filter((n) => !found.has(n));
   if (missing.length) throw new ToolError(`Cannot export: ${missing.length} required image(s) are missing: ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? ', …' : ''}.`);
   let written;
@@ -111,29 +109,28 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
   }
   const files = [];
   let size = null;
-  if (items.length) {
+  let pageCount = 0;
+  if (used.length) {
     let packed;
     try {
-      packed = pack(items);
+      packed = packAtlas(p.doc, (name) => rgbaOf(found.get(name)), {
+        name: path.basename(base), filter: atlasFilter(p.doc.textureFilter), maxSize: pageSize, powerOfTwo: true, ext: texture,
+      });
     } catch (e) {
       throw new ToolError(`Packing the atlas failed: ${e.message}`);
     }
-    const pagePaths = packed.map((_, i) => i === 0 ? pngPath : `${base}_${i + 1}.png`);
-    await checkTargets(pagePaths.slice(1), force);
-    const pages = [];
-    for (let i = 0; i < packed.length; i++) {
-      const { width, height, regions } = packed[i];
-      const sheet = new Uint8Array(width * height * 4);
-      for (const r of regions) {
-        const img = items.find((item) => item.name === r.name);
-        for (let y = 0; y < img.height; y++) sheet.set(img.data.subarray(y * img.width * 4, (y + 1) * img.width * 4), ((r.y + y) * width + r.x) * 4);
-      }
-      pages.push({ name: path.basename(pagePaths[i]), width, height, filter: atlasFilter(p.doc.textureFilter), regions: regions.map((r) => ({ ...r, rotate: 0, index: -1 })) });
-      await writeAtomic(pagePaths[i], encodePng({ width, height, data: sheet }));
+    const targets = packed.pages.map((page) => path.join(path.dirname(output), page.name));
+    const fallbackTargets = texture === 'ktx2' && fallback ? targets.map((file) => file.replace(/\.ktx2$/, '.png')) : [];
+    await checkTargets([...targets, ...fallbackTargets], force);
+    for (const [i, page] of packed.pages.entries()) {
+      const bytes = texture === 'ktx2' ? await encodeKtx2(page, { codec, quality, mipmaps, zstd }) : encodePng(page);
+      await writeAtomic(targets[i], bytes);
+      if (fallbackTargets.length) await writeAtomic(fallbackTargets[i], encodePng(page));
     }
-    await writeAtomic(atlasPath, writeAtlas(pages));
-    files.push(atlasPath, ...pagePaths);
-    size = [packed[0].width, packed[0].height];
+    await writeAtomic(atlasPath, packed.atlas);
+    files.push(atlasPath, ...targets, ...fallbackTargets);
+    size = [packed.pages[0].width, packed.pages[0].height];
+    pageCount = packed.pages.length;
   }
   const bytes = ext === '.skel' ? writeSkeletonBinary(written.json) : new TextEncoder().encode(JSON.stringify(written.json, null, 2));
   await writeAtomic(output, bytes);
@@ -144,7 +141,8 @@ export async function exportWithAtlas(input, output, { version = '4.3', force = 
     version: ext === '.skel' ? '4.3' : version,
     files: [output, ...files],
     atlasSize: size,
-    regions: items.length,
+    atlasPages: pageCount,
+    regions: used.length,
     missingImages: missing,
     warnings: written.warnings,
   };

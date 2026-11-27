@@ -85,3 +85,12 @@ seconds from the clip before. `depth` moves top-level stage bones for parallax: 
 - Y points **up** (runtimes for Y-down engines, such as Godot, convert).
 - Angles are in degrees, counterclockwise.
 - Times are in seconds.
+
+## Binary .skel 4.2
+
+Older binary skeletons in format 4.2 open in the editor, convert with `rigby convert` and the MCP
+tools, and load in the Rust, C++ (Defold) and C# (Unity) runtimes. Rigby2D always writes 4.3.
+
+The editor and MCP tools share a reader for 4.0 through 4.3. The 4.2 reader supports
+named skins, weighted attachments, slot colors, and IK, transform, path and physics constraints.
+Use skeleton JSON when binary conversion reports an unsupported field.

@@ -20,7 +20,7 @@ def register():
         issues = []
         used = {s.bone.name for s in slots}
         for c in rigby.constraints():
-            used.update(b.name for b in c.bones)
+            used.update(getattr(b, "name", b) for b in c.bones)
             if c.type != "path" and c.target:
                 used.add(c.target)
         for b in bones:

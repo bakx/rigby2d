@@ -17,7 +17,8 @@ import { COMMANDS, VERSION, formatText, main } from '../src/cli/main.js';
 import { APP_RENDER_VERSION, GPU_ARGS, appArgs, appCandidates, appReporter, chooseEngine, compareVersions, ffmpegArgs, findApp, parseColor, planJobs } from '../src/cli/render.js';
 import { RENDER_OPTIONS, jobTarget } from '../src/editor/render/plan.js';
 import { parseAtlas } from '../src/core/atlas.js';
-import { unzip } from '../src/editor/zip.js';
+import { unzip, zip } from '../src/editor/zip.js';
+import { exportWithAtlas } from '../src/cli/project.js';
 
 const REPO = path.resolve(fileURLToPath(import.meta.url), '../..');
 const RIGBY = path.join(REPO, 'branding/rigbytron/rigbytron.rigby');
@@ -197,6 +198,33 @@ test('cli: export packs an atlas, and the export opens again with its images', a
   const skel = await rigby('export', RIGBY, '-F', 'skel', '--out', path.join(dir, 'bin/rt.skel'));
   assert.equal(skel.code, 0);
   assert.equal((await rigby('export', RIGBY, '--out', path.join(dir, 'x.txt'))).code, 2);
+});
+
+test('cli: export spreads the images over more atlas pages when one is too small (#49)', async () => {
+  const dir = await tmpDir();
+  const out = path.join(dir, 'game/rt.json');
+  await fs.mkdir(path.join(dir, 'game'));
+  const r = await exportWithAtlas(RIGBY, out, { pageSize: 1024 });
+  assert.ok(r.atlasPages > 1, `${r.atlasPages} page`);
+  assert.deepEqual(r.missingImages, []);
+  const atlas = parseAtlas(await fs.readFile(path.join(dir, 'game/rt.atlas'), 'utf8'));
+  assert.deepEqual(atlas.pages.map((p) => p.name), ['rt.png', ...Array.from({ length: r.atlasPages - 1 }, (_, i) => `rt_${i + 2}.png`)]);
+  for (const page of atlas.pages) {
+    assert.ok(page.width <= 1024 && page.height <= 1024);
+    assert.ok(await exists(path.join(dir, 'game', page.name)), page.name);
+  }
+  assert.equal(atlas.pages.flatMap((p) => p.regions).length, 10);
+  assert.deepEqual(r.files.slice(1), [path.join(dir, 'game/rt.atlas'), ...atlas.pages.map((p) => path.join(dir, 'game', p.name))]);
+  // The export opens again with every image from every page.
+  const work = path.join(dir, 'back.rigby');
+  assert.deepEqual((await rigby('convert', out, work, '--json')).json.missingImages, []);
+  const back = unzip(new Uint8Array(await fs.readFile(work)));
+  assert.equal([...back.keys()].filter((k) => k.startsWith('images/')).length, 10);
+  // An existing extra page blocks the export even when the main files are absent.
+  await Promise.all([out, r.files[1], r.files[2]].map((file) => fs.unlink(file)));
+  await assert.rejects(exportWithAtlas(RIGBY, out, { pageSize: 1024 }), /rt_2\.png already exists/);
+  assert.equal(await exists(out), false);
+  assert.equal(await exists(r.files[2]), false);
 });
 
 test('cli: export sprite sheets and a Defold model', async () => {

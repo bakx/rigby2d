@@ -483,7 +483,7 @@ function readIk(r, name, bones, out) {
   const c = { type: 'ik', name, target, bones };
   if (flags & IK_SKIN) c.skin = true;
   if (r.v42) {
-    if (!(flags & IK_BEND_POSITIVE_42) && bones.length > 1) c.bendPositive = false;
+    if (!(flags & IK_BEND_POSITIVE_42)) c.bendPositive = false;
     if (flags & IK_COMPRESS_42) c.compress = true;
     if (flags & IK_STRETCH_42) c.stretch = true;
     if (flags & IK_UNIFORM_42) c.uniform = true;
@@ -1241,7 +1241,10 @@ function readAnimation(r, out, eventNames, nonessential) {
     const def = out.events[key.name] ?? {};
     if (int !== (def.int ?? 0)) key.int = int;
     if (float !== (def.float ?? 0)) key.float = float;
-    if (r.bool()) key.string = r.string();
+    if (r.v42) {
+      const string = r.string();
+      if (string !== null) key.string = string;
+    } else if (r.bool()) key.string = r.string();
     if (def.audio) {
       key.volume = r.float();
       key.balance = r.float();
@@ -1319,8 +1322,14 @@ function readConstraints42(r, out) {
       let c;
       if (type === 'physics') c = readPhysics(r, name, out);
       else {
+        const skinRequired = type === 'path' && r.bool();
         const list = bones();
         c = type === 'ik' ? readIk(r, name, list, out) : type === 'path' ? readPath(r, name, list, out) : readTransform42(r, name, list, out);
+        if (type === 'path') {
+          c.target = c.slot;
+          delete c.slot;
+          if (skinRequired) c.skin = true;
+        }
       }
       delete c.type;
       out[type].push({ name, order, ...c });
@@ -1339,10 +1348,11 @@ function readTransform42(r, name, bones, out) {
   const mixes = r.byte();
   if (mixes & 0x01) c.shearY = r.float();
   if (mixes & 0x80) throw new Unsupported(`Transform constraint options (0x${mixes.toString(16)}) on '${name}'`);
-  // A clear bit is a mix of 0; JSON leaves out the default of 1.
+  // A clear bit is a mix of 0. In JSON the Y translation/scale mixes default to their X mix.
   TRANSFORM_MIXES.forEach(([key], i) => {
     const v = mixes & (0x02 << i) ? r.float() : 0;
-    if (v !== 1) c[key] = v;
+    const fallback = key === 'mixY' ? c.mixX ?? 1 : key === 'mixScaleY' ? c.mixScaleX ?? 1 : 1;
+    if (v !== fallback) c[key] = v;
   });
   return c;
 }

@@ -210,7 +210,7 @@ export class Pose {
     for (const t of anim.deform) {
       if (!active(t.keys)) continue;
       const slot = sk.slots[t.slot];
-      const att = slot && sk.attachment(t.slot, t.attachment, t.skin ?? sk.skin);
+      const att = slot && sk.attachment(t.slot, t.attachment, t.skin ?? undefined);
       if (!att) continue;
       const source = sk.meshSource(t.slot, att) ?? att;
       const deltas = sampleDeform(t.keys, time, deformLength(source));
@@ -267,9 +267,10 @@ export class Pose {
   updateWorld(sk) {
     const n = this.local.length;
     this.activeBones = sk.bones.map(b => !b.skinRequired);
-    const activeSkin = sk.skin ? sk.findSkin(sk.skin) : null;
-    if (activeSkin) for (const index of activeSkin.bones) {
-      for (let b = index; b !== null && b !== undefined; b = sk.bones[b]?.parent) this.activeBones[b] = true;
+    for (const name of sk.activeSkins?.() ?? (sk.skin ? [sk.skin] : [])) {
+      for (const index of sk.findSkin(name)?.bones ?? []) {
+        for (let b = index; b !== null && b !== undefined; b = sk.bones[b]?.parent) this.activeBones[b] = true;
+      }
     }
     for (let i = 0; i < n; i++) this.applied[i] = this.applied[i] ? copyTransform(this.local[i], this.applied[i]) : cloneTransform(this.local[i]);
     this.applied.length = n;
@@ -393,8 +394,10 @@ export class Pose {
   }
 
   skinActive(sk, has) {
-    const skin = sk.skin ? sk.findSkin(sk.skin) : null;
-    return !!skin && has(skin);
+    return (sk.activeSkins?.() ?? (sk.skin ? [sk.skin] : [])).some((name) => {
+      const skin = sk.findSkin(name);
+      return !!skin && has(skin);
+    });
   }
 
   computeWorld(sk) {
@@ -576,6 +579,7 @@ export class Pose {
 
   /** The attachment currently shown in a slot, resolved through the active skin. */
   slotAttachment(sk, slot) {
+    if (!this.activeBones[sk.slots[slot].bone]) return null;
     return sk.attachment(slot, this.attachment[slot]);
   }
 
@@ -634,7 +638,7 @@ export class Pose {
     const out = [];
     for (const i of this.drawOrder) {
       const slot = sk.slots[i];
-      if (!slot || !this.activeBones[slot.bone]) continue;
+      if (!slot) continue;
       const att = this.slotAttachment(sk, i);
       if (!att) continue;
       const tint = this.color[i];

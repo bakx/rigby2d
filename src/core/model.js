@@ -102,6 +102,9 @@ export class Skeleton {
     this.skins = [];
     /** Active skin name (null = default skin only). */
     this.skin = null;
+    /** More skins shown on top of `skin` (the editor's preview of a combination: a later one wins,
+     *  as when a game combines skins). Kept in the work file; exports leave it out. */
+    this.extraSkins = [];
     /** IK constraints: { name, order, skinRequired, bones, target, mix, softness, bendPositive, compress, stretch, uniform }. */
     this.ik = [];
     /** Event definitions: { name, int, float, string, audio, volume, balance }. */
@@ -266,11 +269,22 @@ export class Skeleton {
     return this.findSkin(skinName)?.slots.find((e) => e.slot === slot)?.attachments ?? [];
   }
 
-  /** Resolves an attachment by slot and name: active skin first, then the default skin. */
-  attachment(slot, name, skinName = this.skin) {
+  /** The skins shown, `skin` first and then the extra ones (each name once, only existing skins). */
+  activeSkins() {
+    const out = [];
+    for (const name of [this.skin, ...(this.extraSkins ?? [])]) if (name && !out.includes(name) && this.findSkin(name)) out.push(name);
+    return out;
+  }
+
+  /**
+   * Resolves an attachment by slot and name: in `skinName`, or by default in the active skins (the
+   * last one first), then in the default skin.
+   */
+  attachment(slot, name, skinName = undefined) {
     if (name === null || name === undefined) return undefined;
-    if (skinName) {
-      const found = this.skinAttachments(slot, skinName).find((a) => a.name === name);
+    const skins = skinName === undefined ? this.activeSkins().reverse() : skinName ? [skinName] : [];
+    for (const skin of skins) {
+      const found = this.skinAttachments(slot, skin).find((a) => a.name === name);
       if (found) return found;
     }
     return this.slots[slot]?.attachments.find((a) => a.name === name);
@@ -652,6 +666,7 @@ function readSkeleton(o) {
     extra: raw(skin.extra) ?? {},
   }));
   sk.skin = o.skin === undefined || o.skin === null ? null : str(o.skin, undefined, 'skin');
+  sk.extraSkins = arr(o.extraSkins, 'extraSkins').map((name) => str(name, undefined, 'extraSkins'));
   sk.ik = arr(o.ik, 'ik').map((c) => ({
     name: str(c.name, undefined, 'name'),
     order: num(c.order, 0, 'order'),
@@ -700,6 +715,7 @@ function readSkeleton(o) {
     anim.events = arr(a.events, 'events').map((e) => ({ ...raw(e), time: num(e.time, 0, 'time'), name: str(e.name, undefined, 'name') }));
     anim.ik = arr(a.ik, 'ik').map((t) => ({ constraint: index(t.constraint, 'constraint'), keys: readKeys(t.keys, 'keys', (v) => ({ ...raw(v) })) }));
     anim.extra = raw(a.extra) ?? {};
+    anim.markers = arr(a.markers, 'markers').map((m) => ({ time: num(m.time, 0, 'time'), name: str(m.name ?? '', undefined, 'name') }));
     return anim;
   });
   sk.images = arr(o.images, 'images').map((i) => ({
@@ -803,6 +819,7 @@ function writeSkeleton(sk) {
     });
   }
   if (sk.skin) out.skin = sk.skin;
+  if (sk.extraSkins?.length) out.extraSkins = sk.extraSkins.slice();
   if (sk.ik.length) out.ik = sk.ik.map((c) => ({ ...c, bones: c.bones.slice() }));
   if (sk.events.length) out.events = sk.events.map((e) => ({ ...e }));
   out.animations = sk.animations.map((a) => {
@@ -833,6 +850,7 @@ function writeSkeleton(sk) {
     if (a.events.length) o.events = a.events.map((e) => ({ ...e }));
     if (a.ik.length) o.ik = a.ik.map((t) => ({ constraint: t.constraint, keys: writeKeys(t.keys, (v) => ({ ...v })) }));
     if (Object.keys(a.extra).length) o.extra = raw(a.extra);
+    if (a.markers?.length) o.markers = a.markers.map((m) => ({ time: m.time, name: m.name }));
     return o;
   });
   if (sk.images.length) {

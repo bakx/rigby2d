@@ -6,7 +6,7 @@ import { animationBounds, describeOutput, outputFrame } from './output.js';
 import { Affine, toAffine, transform, wrapDegrees } from '../core/math.js';
 import { makeBone } from '../core/model.js';
 import { Pose } from '../core/pose.js';
-import { Mode, selBone, selSlot } from './app.js';
+import { FPS, Mode, selBone, selSlot } from './app.js';
 import * as edit from './edit.js';
 import { GLView } from './glview.js';
 import { actorSlots } from '../core/scene.js';
@@ -19,11 +19,14 @@ import { h, popupMenu } from './widgets.js';
 import { statusMessage, t, tn } from './i18n.js';
 import { canvasColor } from './canvascolors.js';
 import { isBoneHidden, isBoneLocked, isSlotHidden, isSlotLocked } from './visibility.js';
+import { boneMenu, slotMenu } from './tree.js';
 
 const SELECTED = 'rgb(255,170,40)';
 const BONE = 'rgb(110,200,230)';
 // Magenta so the hover glow stands clear of the cyan bones (BONE) and the orange selection.
 const HOVER = 'rgb(255,70,205)';
+/** Shift+rotate snaps to this many degrees. */
+const ROTATE_STEP = 15;
 const DRAG_THRESHOLD = 3;
 /** Width of the pixel rulers (screen px), and how close to a guide line counts as a grab. */
 const RULER_W = 18;
@@ -136,6 +139,7 @@ export class Viewport {
     const overlays = !app.hideOverlays;
     if (overlays) this.drawShapes(pose);
     if (overlays && app.imageGlow) this.drawImageGlow(pose);
+    if (overlays && app.motionPaths && app.mode === Mode.Animate) this.drawMotionPaths();
     if (overlays && app.showBones) this.drawBones(pose);
     if (overlays) this.drawGuides(pose);
     this.meshTool.draw(this.ctx);
@@ -229,6 +233,34 @@ export class Viewport {
       pts.push(pose.world[i].apply([0, 0]));
       pts.push(pose.world[i].apply([b.length, 0]));
     });
+    this.framePoints(pts);
+  }
+
+  /**
+   * Frames the selection as it is posed now: the selected bones (with their slots' images) or the
+   * selected slot. Nothing selected frames everything. Returns whether something was framed.
+   */
+  frameSelected() {
+    const app = this.app;
+    const pose = app.pose();
+    const bones = new Set(app.selectedBones());
+    const slot = selSlot(app.sel);
+    if (!bones.size && slot === null) {
+      this.frameAll();
+      return false;
+    }
+    const pts = pose.quads(app.doc).filter((q) => (slot !== null ? q.slot === slot : bones.has(app.doc.slots[q.slot].bone))).flatMap((q) => q.positions);
+    for (const i of bones) {
+      const b = app.doc.bones[i];
+      pts.push(pose.world[i].apply([0, 0]), pose.world[i].apply([Math.max(b.length, 1), 0]));
+    }
+    this.framePoints(pts, 0.6);
+    return true;
+  }
+
+  /** Pans and zooms so the world points fill `fill` of the viewport. */
+  framePoints(pts, fill = 0.8) {
+    const app = this.app;
     let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
     for (const [x, y] of pts) {
       x0 = Math.min(x0, x);
@@ -240,7 +272,7 @@ export class Viewport {
       app.view = { panX: 0, panY: this.height * 0.25, zoom: 1 };
       return;
     }
-    const zoom = Math.min(20, Math.max(0.05, Math.min(this.width / Math.max(1, x1 - x0), this.height / Math.max(1, y1 - y0)) * 0.8));
+    const zoom = Math.min(20, Math.max(0.05, Math.min(this.width / Math.max(1, x1 - x0), this.height / Math.max(1, y1 - y0)) * fill));
     const cx = (x0 + x1) * 0.5;
     const cy = (y0 + y1) * 0.5;
     app.view = { panX: -cx * zoom, panY: cy * zoom, zoom };
@@ -289,7 +321,7 @@ export class Viewport {
         for (const q of e.pose.quads(e.doc)) this.drawQuad({ ...q, image: imageKey(actor.id, q.image), color: q.color.map((c, k) => c * tint[k]) }, e.doc, e.pose, dpr, false);
       }
       const q = quadAt.get(i);
-      if (q && !isSlotHidden(app.doc, i)) this.drawQuad(q, app.doc, pose, dpr, true);
+      if (q && !isSlotHidden(app.doc, i) && app.showImages !== false) this.drawQuad(q, app.doc, pose, dpr, true);
     }
   }
 
@@ -555,6 +587,7 @@ export class Viewport {
   drawBones(pose) {
     const app = this.app;
     const selection = new Set(app.selectedBones());
+    const s = app.prefs?.get('view.boneSize') ?? 1; // View ▸ Bone size
     this.drawBoneLinks(pose, selection);
     app.doc.bones.forEach((b, i) => {
       if (isBoneHidden(app.doc, i)) return;
@@ -574,27 +607,28 @@ export class Viewport {
         // A point bone: a ring with a crosshair, the same size at any zoom, and a tick along its
         // X axis so its rotation reads. Selected, it gets a handle to turn it.
         const ax = this.pointAxis(pose, i);
-        if (glow) this.glowOutline(() => this.arcPath(o, 7), glow, glowOpts);
-        this.circle(o, 7, rgba(color, selected ? 0.45 : 0.25), color, 1.5);
-        this.line([o[0] - 3, o[1]], [o[0] + 3, o[1]], color, 1);
-        this.line([o[0], o[1] - 3], [o[0], o[1] + 3], color, 1);
-        this.line([o[0] + ax[0] * 7, o[1] + ax[1] * 7], [o[0] + ax[0] * 13, o[1] + ax[1] * 13], color, 2);
+        const r = 7 * s;
+        if (glow) this.glowOutline(() => this.arcPath(o, r), glow, glowOpts);
+        this.circle(o, r, rgba(color, selected ? 0.45 : 0.25), color, 1.5);
+        this.line([o[0] - 3 * s, o[1]], [o[0] + 3 * s, o[1]], color, 1);
+        this.line([o[0], o[1] - 3 * s], [o[0], o[1] + 3 * s], color, 1);
+        this.line([o[0] + ax[0] * r, o[1] + ax[1] * r], [o[0] + ax[0] * 13 * s, o[1] + ax[1] * 13 * s], color, 2);
         if (selected && selection.size === 1) {
           const k = this.pointKnob(pose, i);
           this.ctx.save();
           this.ctx.setLineDash([2, 3]);
-          this.line([o[0] + ax[0] * 13, o[1] + ax[1] * 13], k, color, 1);
+          this.line([o[0] + ax[0] * 13 * s, o[1] + ax[1] * 13 * s], k, color, 1);
           this.ctx.restore();
           this.circle(k, 4.5, rgba(color, 0.6), color, 1.5);
         }
         return;
       }
       if (len < 4) {
-        if (glow) this.glowOutline(() => this.arcPath(o, 6), glow, glowOpts);
-        this.circle(o, 6, rgba(color, 0.35), color, 1.5);
+        if (glow) this.glowOutline(() => this.arcPath(o, 6 * s), glow, glowOpts);
+        this.circle(o, 6 * s, rgba(color, 0.35), color, 1.5);
         return;
       }
-      const w = Math.min(12, Math.max(3, len * 0.1));
+      const w = Math.min(12, Math.max(3, len * 0.1)) * s;
       const n = [(-dir[1] / len) * w, (dir[0] / len) * w];
       const mid = [o[0] + dir[0] * 0.18, o[1] + dir[1] * 0.18];
       const shape = [o, [mid[0] + n[0], mid[1] + n[1]], t, [mid[0] - n[0], mid[1] - n[1]]];
@@ -602,6 +636,78 @@ export class Viewport {
       this.polygon(shape, rgba(color, selected ? 0.55 : 0.3), color, 1.5);
       this.circle(o, w * 0.55, 'rgb(30,30,30)', color, 1.5);
     });
+    if (app.showNames) this.drawBoneNames(pose, selection);
+  }
+
+  /**
+   * Motion paths (View ▸ Motion paths): where the tip of each selected bone goes over the whole
+   * animation, a frame at a time, with a dot per key and the current frame ringed. Recomputed only
+   * when the document, the animation or the selection changes.
+   */
+  drawMotionPaths() {
+    const app = this.app;
+    const anim = app.currentAnimation();
+    const bones = app.selectedBones();
+    if (!anim || !bones.length) return;
+    const key = `${app.version}|${app.anim}|${bones.join(',')}|${app.docEpoch ?? ''}`;
+    if (this.pathCache?.key !== key) {
+      const frames = Math.max(1, Math.round(anim.duration * FPS));
+      const step = frames > 600 ? Math.ceil(frames / 600) : 1;
+      const tracks = bones.map(() => []);
+      const pose = new Pose(app.doc);
+      for (let f = 0; f <= frames; f += step) {
+        pose.reset(app.doc);
+        pose.apply(app.doc, anim, f / FPS, 1);
+        pose.updateWorld(app.doc);
+        bones.forEach((b, i) => tracks[i].push(pose.world[b].apply([app.doc.bones[b].length, 0])));
+      }
+      const keyed = bones.map((b) => new Set(Object.values(anim.boneTimeline(b) ?? {}).filter(Array.isArray).flatMap((ks) => ks.map((k) => Math.round(k.time * FPS / step)))));
+      this.pathCache = { key, tracks, keyed, step };
+    }
+    const { tracks, keyed, step } = this.pathCache;
+    const ctx = this.ctx;
+    const now = Math.round((app.time * FPS) / step);
+    ctx.save();
+    tracks.forEach((pts, i) => {
+      const screen = pts.map((p) => this.toScreen(p));
+      ctx.strokeStyle = rgba(SELECTED, 0.55);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      screen.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+      screen.forEach(([x, y], k) => {
+        const isKey = keyed[i].has(k);
+        ctx.fillStyle = isKey ? SELECTED : rgba(SELECTED, 0.5);
+        ctx.beginPath();
+        ctx.arc(x, y, isKey ? 3.5 : 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      const c = screen[Math.min(now, screen.length - 1)];
+      if (c) this.circle(c, 6, 'transparent', SELECTED, 2);
+    });
+    ctx.restore();
+  }
+
+  /** Bone names (Show and select panel ▸ names): beside each bone's middle, on a dark pill. */
+  drawBoneNames(pose, selection) {
+    const app = this.app;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = '11px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    app.doc.bones.forEach((b, i) => {
+      if (isBoneHidden(app.doc, i) || !pose.world[i]) return;
+      const [x, y] = this.toScreen(pose.world[i].apply([b.length * 0.5, 0]));
+      const w = ctx.measureText(b.name).width + 8;
+      ctx.fillStyle = selection.has(i) ? SELECTED : canvasColor('--tl-bg', 'black');
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x + 6, y - 8, w, 16, 4);
+      else ctx.rect(x + 6, y - 8, w, 16);
+      ctx.fill();
+      ctx.fillStyle = selection.has(i) ? canvasColor('--tl-bg', 'black') : canvasColor('--tl-text', 'white');
+      ctx.fillText(b.name, x + 10, y);
+    });
+    ctx.restore();
   }
 
   /** Screen-space unit vector along a bone's X axis (its rotation as drawn). */
@@ -1022,9 +1128,16 @@ export class Viewport {
 
   /** The nearest bone under a screen position (index), or null. Bones only — used for hover. */
   hitBone(pose, pos) {
+    return this.hitBones(pose, pos)[0] ?? null;
+  }
+
+  /** Every bone under a screen position, nearest first (indices). */
+  hitBones(pose, pos) {
     const app = this.app;
-    if (!app.showBones || app.hideOverlays) return null;
-    let best = null;
+    // Hidden, or not pickable in the Show and select panel.
+    if (!app.showBones || app.hideOverlays || app.pickable?.bones === false) return [];
+    const s = app.prefs?.get('view.boneSize') ?? 1;
+    const found = [];
     app.doc.bones.forEach((b, i) => {
       const m = pose.world[i];
       if (!m) return; // a pose from before the skeleton changed (#25)
@@ -1033,10 +1146,53 @@ export class Viewport {
       const t = this.toScreen(m.apply([b.length, 0]));
       const d = distToSegment(pos, o, t);
       const len = Math.hypot(t[0] - o[0], t[1] - o[1]);
-      const reach = len < 4 ? (isPointBone(b) ? 9 : 8) : Math.min(12, Math.max(5, len * 0.1));
-      if (d <= reach && (best === null || d < best.d)) best = { d, i };
+      const reach = Math.max(5, (len < 4 ? (isPointBone(b) ? 9 : 8) : Math.min(12, Math.max(5, len * 0.1))) * s);
+      if (d <= reach) found.push({ d, i });
     });
-    return best ? best.i : null;
+    return found.sort((a, b) => a.d - b.d).map((f) => f.i);
+  }
+
+  /**
+   * Everything a click at a screen position could pick, in the order Alt+click cycles through it:
+   * the bones under it (nearest first), then the images and meshes (front to back).
+   */
+  hitAll(pose, pos) {
+    const app = this.app;
+    const out = this.hitBones(pose, pos).map((bone) => ({ bone }));
+    const world = this.toWorld(pos);
+    const seen = new Set();
+    for (let quads = pose.quads(app.doc); ; ) {
+      const q = this.hitDrawables(quads, app.doc, pose, world, (n) => n);
+      if (!q) break;
+      if (!seen.has(q.slot)) out.push({ slot: q.slot });
+      seen.add(q.slot);
+      quads = quads.filter((x) => x !== q);
+    }
+    return out;
+  }
+
+  /** Right-click: the tree's menu for the bone or image under the cursor (selecting it first). */
+  contextMenu(pos, x, y) {
+    const app = this.app;
+    if (app.pick || this.meshTool.active || this.shapeTool.active || this.warpTool.active) return;
+    const hit = this.hitTest(app.pose(), pos);
+    if (!hit) return;
+    app.select(hit);
+    if (hit.bone !== undefined) boneMenu(app, hit.bone, x, y);
+    else if (hit.slot !== undefined) slotMenu(app, hit.slot, x, y);
+  }
+
+  /** Alt+click: selects the next of everything under the cursor after what is selected now. */
+  cyclePick(pos) {
+    const app = this.app;
+    const all = this.hitAll(app.pose(), pos);
+    if (!all.length) return app.deselect();
+    const same = (a, b) => (a?.bone ?? null) === (b?.bone ?? null) && (a?.slot ?? null) === (b?.slot ?? null);
+    const at = all.findIndex((x) => same(x, app.sel && { bone: selBone(app.sel), slot: selSlot(app.sel) }));
+    const next = all[(at + 1) % all.length];
+    app.select(next);
+    const name = next.bone !== undefined ? app.doc.bones[next.bone].name : app.doc.slots[next.slot].name;
+    app.setStatus(statusMessage('{name} ({n} of {count} under the cursor; Alt+click again for the next)', { name, n: ((at + 1) % all.length) + 1, count: all.length }));
   }
 
   /** Finds the bone or slot under a screen position (bones first, then topmost image). */
@@ -1069,7 +1225,8 @@ export class Viewport {
     const app = this.app;
     for (const q of [...quads].reverse()) {
       const att = q.attachment;
-      if (doc === app.doc && (isSlotHidden(doc, q.slot) || isSlotLocked(doc, q.slot))) continue;
+      // Hidden or locked in the tree, or images hidden or not pickable in the Show and select panel.
+      if (doc === app.doc && (isSlotHidden(doc, q.slot) || isSlotLocked(doc, q.slot) || app.showImages === false || app.pickable?.images === false)) continue;
       if (q.kind === 'mesh') {
         const t = q.triangles;
         for (let i = 0; i + 2 < t.length; i += 3) {
@@ -1138,10 +1295,12 @@ export class Viewport {
       this.meshPress = editTool;
       editTool.down(pos, e);
     } else if (e.button === 0) {
-      this.press = { pos, started: false, add: e.ctrlKey || e.metaKey };
+      this.press = { pos, started: false, add: e.ctrlKey || e.metaKey, cycle: e.altKey };
     } else if (e.button === 1 || e.button === 2) {
       e.preventDefault();
       this.panning = pos;
+      // A right-click that doesn't move opens the menu of what's under it (pointer up).
+      this.rightPress = e.button === 2 ? { pos, clientX: e.clientX, clientY: e.clientY } : null;
     }
   }
 
@@ -1190,6 +1349,12 @@ export class Viewport {
       else this.guideDragStop(this.eventPos(e), e);
       return;
     }
+    if (e.button === 2 && this.rightPress && e.type === 'pointerup') {
+      const r = this.rightPress;
+      const up = this.eventPos(e);
+      if (Math.hypot(up[0] - r.pos[0], up[1] - r.pos[1]) <= DRAG_THRESHOLD) this.contextMenu(r.pos, r.clientX, r.clientY);
+    }
+    if (e.button === 2) this.rightPress = null;
     if (e.button === 1 || e.button === 2) this.panning = null;
     if (this.meshPress && (e.button === 0 || e.type === 'pointercancel')) {
       this.meshPress.up();
@@ -1198,7 +1363,7 @@ export class Viewport {
     }
     if (e.button === 0 && this.press) {
       if (this.press.started) this.dragStop();
-      else if (e.type === 'pointerup') this.click(this.press.pos, this.press.add);
+      else if (e.type === 'pointerup') this.click(this.press.pos, this.press.add, this.press.cycle);
       this.press = null;
     }
     if (e.type === 'pointercancel') {
@@ -1224,9 +1389,15 @@ export class Viewport {
   }
 
   /** Click: select what is under the cursor; Ctrl adds or removes bones; empty space deselects. */
-  click(pos, add) {
+  click(pos, add, cycle = false) {
     const app = this.app;
     if (this.press?.testPose) return;
+    if (cycle && !app.pick && app.tool !== 'create') {
+      this.cyclePick(pos);
+      app.selectedKeys.clear();
+      app.changed();
+      return;
+    }
     // Picking a bone for a field (a constraint's driver, an IK target...): the click answers it.
     if (app.pick) {
       const b = this.hitBone(app.pose(), pos);
@@ -1325,6 +1496,10 @@ export class Viewport {
     let world = this.toWorld(pos);
     // Translating with Shift held moves along one axis only: the one the drag has gone further on.
     const translating = (d.kind === 'bones' && app.tool === 'translate') || d.kind === 'poseTranslate';
+    // Rotating with Shift held turns in 15° steps.
+    const rotating = d.kind === 'bones' && app.tool === 'rotate';
+    if (rotating && shift && !d.snapRotate) app.setStatus(statusMessage('Turning in 15° steps (release Shift to turn freely)'));
+    d.snapRotate = rotating && shift;
     if (translating && shift) {
       const dx = world[0] - d.start[0];
       const dy = world[1] - d.start[1];
@@ -1600,7 +1775,7 @@ export class Viewport {
     const inside = (p) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
     const hits = [];
     app.doc.bones.forEach((bone, i) => {
-      if (isBoneHidden(app.doc, i) || isBoneLocked(app.doc, i)) return;
+      if (isBoneHidden(app.doc, i) || isBoneLocked(app.doc, i) || !app.showBones || app.pickable?.bones === false) return;
       const o = this.toScreen(pose.world[i].apply([0, 0]));
       const t = this.toScreen(pose.world[i].apply([bone.length, 0]));
       if (inside(o) || inside(t)) hits.push(i);
@@ -1630,9 +1805,20 @@ export class Viewport {
     const origin = pose.world[b].apply([0, 0]);
     const sign = parent.determinant() < 0 ? -1 : 1;
     switch (tool) {
-      case 'rotate':
-        local.rotation += sign * angleBetween(origin, last, cur);
+      case 'rotate': {
+        const d = this.drag;
+        if (d?.snapRotate) {
+          // Shift: the turn since the drag began, in 15° steps, from where the bone started.
+          d.rot0 ??= new Map();
+          if (!d.rot0.has(b)) d.rot0.set(b, local.rotation - sign * angleBetween(origin, d.start, last));
+          const total = sign * angleBetween(origin, d.start, cur);
+          local.rotation = d.rot0.get(b) + Math.round(total / ROTATE_STEP) * ROTATE_STEP;
+        } else {
+          if (d?.rot0) d.rot0 = null; // Shift let go: free rotation from here
+          local.rotation += sign * angleBetween(origin, last, cur);
+        }
         break;
+      }
       case 'translate': {
         const d = parent.inverse().applyVector([cur[0] - last[0], cur[1] - last[1]]);
         local.x += d[0];

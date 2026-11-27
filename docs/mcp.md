@@ -106,7 +106,7 @@ all of its parameters, generated from the server itself.
 | `describe_animation` | Key times of every bone, slot, deform, IK and draw-order timeline of one animation, its events, attachment swaps. | No |
 | `sample_pose` | Evaluates the setup pose or an animation at a time with the runtime: world transforms of every bone, visible attachments, draw order, events so far, bounds. | No |
 | `validate_project` | Structure, images missing from the work file, atlas or images folder, animations without keys, whether skeleton JSON 4.3 round-trips the data, whether binary `.skel` export is possible. | No |
-| `convert_project` | Writes skeleton JSON (3.8, 4.2 or 4.3) or binary `.skel` (4.3) from a `.rigby`, `.json` or `.skel` file. | Yes |
+| `convert_project` | Writes skeleton JSON (3.8, 4.2 or 4.3) or binary `.skel` (4.3) from a `.rigby`, `.json` or `.skel` (4.0 through 4.3) file. | Yes |
 | `export_sprite_sheet` | Renders animations into a sprite sheet (PNG + JSON hash), a Defold atlas with frames, or PNG frames, into a folder. | Yes |
 | `export_defold_model` | Writes a Rigby2D model for Defold from a character (`.rigby`, or `.skel` / `.json` with its atlas): skeleton, images with a Defold atlas, the `.rigbymodel` component and a game object. The Defold editor plays it live. | Yes |
 | `world_to_local` | Converts a world point into a bone's local coordinates, in the setup pose or at a time in an animation. | No |
@@ -121,6 +121,9 @@ all of its parameters, generated from the server itself.
 | `add_animation` | Adds an empty animation. |
 | `set_bone_key` | Sets a rotate, translate, scale or shear key at a time, with a curve to the next key: `linear`, `stepped`, `easeIn`, `easeOut`, `easeInOut`, or a custom cubic bezier `[cx1, cy1, cx2, cy2]` (as in CSS `cubic-bezier()`; cx1 and cx2 within 0..1). Replaces a key at the same time. |
 | `delete_bone_key` | Deletes a bone key at a time. |
+| `add_slot` / `move_slot` / `set_slot_bone` | Creates slots, reorders them in setup draw order, or changes their parent bone while keeping the artwork in place. |
+| `add_attachment` / `add_path_attachment` / `delete_attachment` | Imports region artwork with optional scaling, builds a cubic path for path constraints, or removes an unused attachment. |
+| `set_draw_order_key` / `set_slot_color_key` | Keys slot order, color or alpha. |
 | `set_attachment_key` | Shows an attachment of a slot from a time on (image swap), or hides it. |
 | `set_event_key` | Fires an event at a time, creating the event definition if needed. Replaces the same event at the same time. |
 | `add_constraint` | Adds an IK, transform, path, physics or slider constraint, applied after the others. A transform constraint keeps its bones where they are (offsets are worked out for you); physics makes one constraint per bone. Settings use skeleton JSON 4.3 spelling. |
@@ -203,6 +206,7 @@ Times can be given in seconds (`time`) or as a `frame` at the project's frame ra
 | --- | --- |
 | `detect_parts` | Previews AutoRig on a PSD (`psd_file`) or an unrigged `.rigby` (`path`): each layer's body part, its side, and whether that came from the name or the position. Read-only. |
 | `autorig` | Rigs layered artwork: bones, joints where parts meet, weighted meshes for parts that bend, and IK for arms and legs. From `psd_file`, it writes a new `.rigby` to `output`. `roles` and `sides` correct the detection, `meshes` is `deforming`, `all` or `none`, and `ik` turns IK on or off. |
+| `import_aseprite` | Turns an Aseprite file (`aseprite_file`) into a new `.rigby` (`output`), like *File ▸ Import ▸ Aseprite*: a slot per layer, an image per picture, an animation per tag. Rig it afterwards with `autorig` or the edit tools. |
 | `map_bones` | Previews how bones of a `source` character match a target (`path`): by name, similar name, body part, or your `mapping`. Read-only. |
 | `retarget_animation` | Copies one animation (`animation`) or several (`animations`) from `source` to the target. Movement is scaled to the target's size (or `scale`); `mode` is `relative` or `world`. Curves are kept, and slot, event and IK keys follow by name. |
 
@@ -294,6 +298,6 @@ and is covered by `test/mcp.test.js`, `test/mcpfilm.test.js` and `test/mcprig.te
 
 `npm run build:mcpb` packs the Claude Desktop extension (`mcpb/build.mjs`): it follows the server's
 imports to collect exactly the files it uses, adds Pyodide and ag-psd, writes `manifest.json` (with
-the tool list and a "Project folders" setting), validates it with Anthropic's `mcpb` tool and writes
+the tool list and a "Project folders" setting), validates it against the MCPB 0.3 manifest schema and writes
 `dist-mcpb/Rigby2D-AI-<version>.mcpb`, plus a copy named `Rigby2D-AI.mcpb` for the "latest" link.
 Releases attach both.

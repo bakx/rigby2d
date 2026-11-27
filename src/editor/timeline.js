@@ -7,14 +7,17 @@ import { listConstraints } from '../core/constraintdata.js';
 import { keyedChannels, setConstraintCurve } from '../core/constraintkeys.js';
 import { EASE_IN, EASE_IN_OUT, EASE_OUT, LINEAR, STEPPED, cloneCurve, isBezier } from '../core/curve.js';
 import { uniqueName } from '../core/model.js';
-import { FPS, Mode, selBone, selSlot, snap } from './app.js';
+import { FPS, Mode, saveSetting, selBone, selSlot, snap } from './app.js';
 import * as edit from './edit.js';
-import { clearSpan, findTrack, makeClipboard, pasteClipboard, planPaste, previewKeys, trackRef } from './keyclip.js';
-import { dragValue, h, popupMenu, select, textField } from './widgets.js';
+import { clearSpan, findTrack, makeClipboard, pasteClipboard, planPaste, previewKeys, reverseClipboard, trackRef } from './keyclip.js';
+import { dragValue, h, isMenuOpen, popupMenu, select, textField } from './widgets.js';
 import { button, dialog, iconButton, segmented, toggleButton, uiIcon } from './ui.js';
 // The dopesheet's row order and key-selection-by-index live in keyorder.js (core-only, so the
 // selection round trip can be tested in Node). Re-exported here so the windows import them as before.
-import { tracks, trackKeys, tweenSpans } from './keyorder.js';
+import { shownTracks as tracks, trackKeys, tweenSpans } from './keyorder.js';
+import { askText } from './resultui.js';
+import { breakdownPose, deleteTime, insertTime } from './timeops.js';
+import { applyAutoCurves } from './curveauto.js';
 import { drawLanes, laneActors, pressLane } from './sceneui.js';
 import { statusMessage, t, tn } from './i18n.js';
 import { FPS_PRESETS, formatFps } from './output.js';
@@ -168,6 +171,14 @@ export function renderControls(app, el) {
       title: t('How paste treats keys already there: Merge, Overwrite (the copied tracks) or Overwrite all (the whole area). Click to switch.'),
       onclick: () => cyclePasteMode(app),
     }),
+    iconButton('git-commit-horizontal', {
+      title: t('Breakdown: pose the selected bones part of the way between their previous and next keys'),
+      disabled: app.mode !== Mode.Animate,
+      onclick: (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        breakdownMenu(app, r.left, r.bottom + 4);
+      },
+    }),
     iconButton('move-horizontal', {
       title: t('Retime (scale the selected keys’ timing): show the drag handles for one use. Or right-click + drag anytime.'),
       active: retimeArmedActive(),
@@ -187,6 +198,16 @@ export function renderControls(app, el) {
       changed((id) => (app.timelineView = id)),
       { title: t('Timeline view') },
     ),
+    // Only the selected bones' and slots' rows (all of them when nothing is selected).
+    iconButton('filter', {
+      title: app.dopesheetSelectedOnly ? t('Showing the selection’s tracks only. Click to show every track.') : t('Show only the selected bones’ and slots’ tracks'),
+      active: !!app.dopesheetSelectedOnly,
+      onclick: () => {
+        app.dopesheetSelectedOnly = !app.dopesheetSelectedOnly;
+        saveSetting('rigby.timeline.selectedOnly', app.dopesheetSelectedOnly ? '1' : '0');
+        app.changed();
+      },
+    }),
     // The time readout last, where the eye ends up after the tools, with the playback speed next to it.
     anim ? timeReadout(app, anim) : null,
     speedSelect(
@@ -238,6 +259,22 @@ export function deleteSelectedKeys(app) {
 // or Escape disarms it (the green and the preview disappear); so does starting a fresh selection.
 let clipboard = null;
 let copiedSource = null; // the original key objects a copy marks green while armed
+// The paste preview shows the keys reversed while Shift is held (Ctrl+Shift+V pastes reversed) or
+// the pointer is over a "Paste reversed" menu item.
+let previewReversed = false;
+let previewMenuReversed = false;
+// The menu flag only counts while a menu is open (Escape can close it under the pointer).
+const reversedPreview = () => previewReversed || (previewMenuReversed && isMenuOpen());
+/** Shows (or stops showing) the paste preview reversed, for menu items that paste reversed. */
+export function setPastePreviewReversed(on) {
+  previewMenuReversed = on;
+}
+if (typeof window !== 'undefined') {
+  const shift = (e) => (previewReversed = e.shiftKey);
+  window.addEventListener('keydown', shift, true);
+  window.addEventListener('keyup', shift, true);
+  window.addEventListener('blur', () => (previewReversed = false));
+}
 let frameSelect = false; // true while the dopesheet is armed to select whole frame columns
 let multiAdd = false; // true makes every selection gesture add to the selection (multi-region)
 // How paste treats existing keys in the pasted area: 'none' merges, 'overwrite' clears the span in
@@ -492,8 +529,11 @@ function resolveTrackKeys(anim, track) {
   return trackKeys(anim, track) ?? null;
 }
 
-/** Pastes the clipboard at the playhead. Prompts when the keys would run past the animation's end. */
-export function pasteKeys(app) {
+/**
+ * Pastes the clipboard at the playhead. Prompts when the keys would run past the animation's end.
+ * `reversed` pastes the keys back to front, so the copied motion plays backwards.
+ */
+export function pasteKeys(app, { reversed = false } = {}) {
   reconcileToDocument(app); // never paste the old project's keys if a new one was opened (e.g. in graph view)
   const anim = app.currentAnimation();
   if (!anim) {
@@ -504,33 +544,34 @@ export function pasteKeys(app) {
     app.setStatus(statusMessage('Nothing to paste: copy keys first (Ctrl+C)'));
     return;
   }
+  const clip = reversed ? reverseClipboard(clipboard) : clipboard;
   const pasteTime = snap(app.time);
-  const plan = planPaste(clipboard, pasteTime, anim.duration, FPS);
+  const plan = planPaste(clip, pasteTime, anim.duration, FPS);
   if (plan.fits) {
-    applyPaste(app, anim, pasteTime, { mode: 'all' });
+    applyPaste(app, anim, pasteTime, { mode: 'all' }, clip);
     return;
   }
   overflowDialog(plan.extraFrames, {
     expand: () => {
       anim.duration = plan.lastTime;
-      applyPaste(app, anim, pasteTime, { mode: 'all' });
+      applyPaste(app, anim, pasteTime, { mode: 'all' }, clip);
     },
-    clip: () => applyPaste(app, anim, pasteTime, { mode: 'clip', limit: anim.duration }),
+    clip: () => applyPaste(app, anim, pasteTime, { mode: 'clip', limit: anim.duration }, clip),
     cancel: () => app.setStatus(statusMessage('Paste cancelled')),
   });
 }
 
-function applyPaste(app, anim, pasteTime, opts) {
+function applyPaste(app, anim, pasteTime, opts, clip) {
   app.playing = false;
   app.mode = Mode.Animate;
   // 'full' clears the whole pasted area first, including tracks the copy did not touch. The span is
   // the copied AREA (blank columns included), matching the preview, not just the keys' extent.
   if (pasteMode === 'full') {
-    const from = pasteTime + (clipboard.cover?.start ?? 0);
-    const end0 = pasteTime + (clipboard.cover?.end ?? clipboard.span);
+    const from = pasteTime + (clip.cover?.start ?? 0);
+    const end0 = pasteTime + (clip.cover?.end ?? clip.span);
     const end = opts.mode === 'clip' ? Math.min(end0, opts.limit) : end0;
     const rows = tracks(app, anim);
-    const copied = new Set(clipboard.groups.map((g) => copiedId(app, anim, g.track)));
+    const copied = new Set(clip.groups.map((g) => copiedId(app, anim, g.track)));
     for (const r of areaRows(app, anim, rows)) {
       const track = rows[r].track;
       if (!track || copied.has(trackId(track))) continue; // copied tracks are cleared by pasteClipboard
@@ -538,7 +579,7 @@ function applyPaste(app, anim, pasteTime, opts) {
       if (keys) clearSpan(keys, from, end);
     }
   }
-  const pasted = pasteClipboard(clipboard, pasteTime, { ...opts, snap, replace: pasteMode !== 'none' }, (ref) => {
+  const pasted = pasteClipboard(clip, pasteTime, { ...opts, snap, replace: pasteMode !== 'none' }, (ref) => {
     const track = findTrack(app.doc, anim, ref, true);
     return track ? resolveTrackKeys(anim, track) : null;
   });
@@ -579,6 +620,12 @@ function keyFill(selected, curve) {
   if (isBezier(curve)) return 'rgb(120,220,140)';
   return canvasColor('--tl-key', 'rgb(230,230,230)');
 }
+
+/** Timeline markers: amber flags on the ruler. */
+const MARKER = 'orange';
+
+/** A copied track's label: purple, like the paste preview. */
+const COPIED_TEXT = 'rgb(185,135,255)';
 
 /** The track label colour (the tween lines use it too, fainter). */
 const tlText = () => canvasColor('--tl-text', 'rgb(200,200,200)');
@@ -663,7 +710,8 @@ export class Dopesheet {
     this.layout = { trackLeft, trackW, duration, t0, span: viewSpan };
 
     // Ruler with frame ticks. Zoomed, everything right of the labels is clipped to the track area.
-    ctx.fillStyle = canvasColor('--tl-ruler', 'rgb(45,45,45)');
+    const rulerBg = canvasColor('--tl-ruler', 'rgb(45,45,45)');
+    ctx.fillStyle = rulerBg;
     ctx.fillRect(0, 0, width, RULER);
     ctx.save();
     if (view) {
@@ -690,6 +738,41 @@ export class Dopesheet {
       if (major) ctx.fillText(String(f), x + 2, 2);
     }
     ctx.stroke();
+    // Summary: a small mark on the ruler at every frame with a key in the rows shown, so the timing
+    // of the whole animation reads at a glance (right-click the ruler to select those keys).
+    const keyed = new Set();
+    for (const { track } of rows) for (const k of trackKeys(anim, track) ?? []) keyed.add(Math.round((k.time ?? 0) * FPS));
+    ctx.fillStyle = canvasColor('--tl-label', 'gray');
+    for (const f of keyed) {
+      const x = timeToX(f / FPS);
+      ctx.beginPath();
+      ctx.moveTo(x, RULER - 7);
+      ctx.lineTo(x + 3, RULER - 4);
+      ctx.lineTo(x, RULER - 1);
+      ctx.lineTo(x - 3, RULER - 4);
+      ctx.fill();
+    }
+    // Markers: a small flag and the name, at the top of the ruler.
+    ctx.font = '10px system-ui, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'top';
+    for (const m of anim.markers ?? []) {
+      const x = timeToX(m.time);
+      ctx.fillStyle = MARKER;
+      ctx.fillRect(x - 0.5, 0, 1.5, RULER);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 7, 3.5);
+      ctx.lineTo(x, 7);
+      ctx.fill();
+      if (m.name) {
+        // On the ruler's own colour, so the frame numbers behind the name don't show through it.
+        const w = ctx.measureText(m.name).width;
+        ctx.fillStyle = rulerBg;
+        ctx.fillRect(x + 8, 0, w + 4, 12);
+        ctx.fillStyle = MARKER;
+        ctx.fillText(m.name, x + 10, 1);
+      }
+    }
     ctx.restore();
 
     // Rows.
@@ -712,10 +795,33 @@ export class Dopesheet {
         ctx.fillStyle = 'rgba(255,70,205,0.22)';
         ctx.fillRect(0, y, width, ROW);
       }
-      ctx.font = '12px system-ui, "Segoe UI", sans-serif';
+      // Rows of one bone or slot are labelled once: its name on the first row, then just the
+      // channel, indented, with a line above each new group.
+      const row = rows[r];
+      const first = r === 0 || rows[r - 1].group !== row.group;
+      const copied = copiedTrackIds?.has(trackId(track));
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = copiedTrackIds?.has(trackId(track)) ? 'rgb(185,135,255)' : tlText();
-      ctx.fillText(label, 8, y + ROW / 2, GUTTER - 14);
+      if (first && r > 0) {
+        ctx.fillStyle = canvasColor('--tl-line', 'gray');
+        ctx.fillRect(0, y, GUTTER - 4, 1);
+      }
+      if (!row.part) {
+        ctx.font = '12px system-ui, "Segoe UI", sans-serif';
+        ctx.fillStyle = copied ? COPIED_TEXT : tlText();
+        ctx.fillText(label, 8, y + ROW / 2, GUTTER - 14);
+      } else if (first) {
+        ctx.font = '600 12px system-ui, "Segoe UI", sans-serif';
+        ctx.fillStyle = copied ? COPIED_TEXT : tlText();
+        const ownerW = Math.min(ctx.measureText(row.owner).width, GUTTER - 60);
+        ctx.fillText(row.owner, 8, y + ROW / 2, GUTTER - 60);
+        ctx.font = '11px system-ui, "Segoe UI", sans-serif';
+        ctx.fillStyle = canvasColor('--tl-label', 'gray');
+        ctx.fillText(row.part, 14 + ownerW, y + ROW / 2, Math.max(10, GUTTER - 22 - ownerW));
+      } else {
+        ctx.font = '11px system-ui, "Segoe UI", sans-serif';
+        ctx.fillStyle = copied ? COPIED_TEXT : canvasColor('--tl-label', 'gray');
+        ctx.fillText(row.part, 20, y + ROW / 2, GUTTER - 26);
+      }
     });
     // Keys and everything over them stay right of the labels when zoomed.
     ctx.save();
@@ -882,12 +988,17 @@ export class Dopesheet {
         ctx.fillStyle = barFill;
         ctx.fillRect(x0, RULER - 4, Math.max(2, x1 - x0), 4);
       };
+      // A reversed paste mirrors each section within the copied span.
+      const reversed = reversedPreview();
+      const spanFrames = Math.round(clipboard.span * FPS);
       for (const reg of clipboard.regions) {
         regionBand(reg.f0, reg.f1, reg.r0, reg.r1, reg.full, 'rgba(60,220,110,0.10)', 'rgba(60,220,110,0.9)');
-        regionBand(reg.f0 + delta, reg.f1 + delta, reg.r0, reg.r1, reg.full, `rgba(180,120,255,${0.08 + 0.08 * pulse})`, `rgba(180,120,255,${0.6 + 0.3 * pulse})`);
+        const [p0, p1] = reversed ? [originFrame + spanFrames - (reg.f1 - originFrame), originFrame + spanFrames - (reg.f0 - originFrame)] : [reg.f0, reg.f1];
+        regionBand(p0 + delta, p1 + delta, reg.r0, reg.r1, reg.full, `rgba(180,120,255,${0.08 + 0.08 * pulse})`, `rgba(180,120,255,${0.6 + 0.3 * pulse})`);
       }
       const alpha = 0.3 + 0.5 * pulse;
-      const preview = previewKeys(clipboard, pasteTime);
+      const shown = reversed ? reverseClipboard(clipboard) : clipboard;
+      const preview = previewKeys(shown, pasteTime);
       // Purple ghosts of the pasted keys (red when they would land past the end).
       for (const g of preview) {
         const r = rowOf.get(copiedId(app, anim, g.track));
@@ -908,8 +1019,8 @@ export class Dopesheet {
         let markRows;
         if (pasteMode === 'full') markRows = areaRows(app, anim, rows);
         else markRows = copiedRows;
-        const cf0 = Math.max(0, Math.round((pasteTime + (clipboard.cover?.start ?? 0)) * FPS));
-        const cf1 = Math.min(frames, Math.round((pasteTime + (clipboard.cover?.end ?? clipboard.span)) * FPS));
+        const cf0 = Math.max(0, Math.round((pasteTime + (shown.cover?.start ?? 0)) * FPS));
+        const cf1 = Math.min(frames, Math.round((pasteTime + (shown.cover?.end ?? shown.span)) * FPS));
         for (const r of markRows) {
           const track = rows[r]?.track;
           if (!track) continue;
@@ -1254,6 +1365,12 @@ export class Dopesheet {
     if (press.right) {
       this.press = null;
       if (!press.started) {
+        // On the ruler: select the keys at that frame, or every key shown.
+        if (press.pos[1] < RULER) {
+          const l = this.layout;
+          rulerMenu(app, press.clientX, press.clientY, Math.round(this.xToTime(press.pos[0]) * FPS), l ? (l.span * FPS) / l.trackW : 1);
+          return;
+        }
         // A plain right-click: select the key under it if needed, then open the curve menu.
         const hit = this.hit(press.pos);
         if (hit && !app.selectedKeys.has(hit.key)) app.selectedKeys = new Set([hit.key]);
@@ -1403,6 +1520,108 @@ function listConstraintsOf(anim) {
 }
 
 /** Curve presets and delete for the selected keys. */
+/** Selects the keys at frame `frame` in the rows the dopesheet shows (every key with `frame` null). */
+export function selectKeysAt(app, frame) {
+  const anim = app.currentAnimation();
+  if (!anim) return 0;
+  const keys = [];
+  for (const { track } of tracks(app, anim)) for (const k of trackKeys(anim, track) ?? []) if (frame === null || Math.round((k.time ?? 0) * FPS) === frame) keys.push(k);
+  app.selectedKeys = new Set(keys);
+  app.setStatus(statusMessage('Selected {count} key(s)', { count: keys.length }));
+  app.changed();
+  return keys.length;
+}
+
+/**
+ * The breakdown slider: drag it to pose the selected bones (every keyed bone when none is selected)
+ * that far between their previous and next keys, keyed at the playhead. 50% is the halfway pose.
+ */
+function breakdownMenu(app, x, y) {
+  const anim = app.currentAnimation();
+  if (!anim) return;
+  const chosen = app.selectedBones();
+  const bones = chosen.length ? chosen : anim.bones.map((tl) => tl.bone);
+  const value = h('span', { class: 'menu-slider-value' }, '50%');
+  const apply = (f) => {
+    const poses = breakdownPose(app.doc, anim, bones, snap(app.time), f);
+    for (const [b, local] of poses) edit.keyBoneTransform(app, b, { ...app.pose().local[b], ...local });
+    value.textContent = `${Math.round(f * 100)}%`;
+    app.setStatus(poses.length ? statusMessage('Breakdown at {pct}% on {count} bone(s)', { pct: Math.round(f * 100), count: poses.length }) : statusMessage('No bone has keys on both sides of the playhead'));
+    app.changed();
+  };
+  const input = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, 'aria-label': t('Breakdown'), oninput: (e) => apply(Number(e.target.value)) });
+  popupMenu(x, y, [
+    h('div', { class: 'item menu-slider', title: t('0%: the previous key. 100%: the next key.') }, input, value),
+    ...[0.25, 0.5, 0.75].map((f) => ({ label: t('{pct}% of the way', { pct: f * 100 }), action: () => apply(f) })),
+  ]);
+}
+
+/** Asks for a whole number of frames (1 or more), or null when cancelled. */
+async function askFrames(title, value = '1') {
+  const text = await askText({ title, value, okLabel: 'OK' });
+  const n = Math.round(Number(text));
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+/** Inserts `frames` frames after `frame` in the current animation (every track and marker). */
+function insertFrames(app, frame, frames) {
+  const anim = app.currentAnimation();
+  if (!anim || !frames) return;
+  insertTime(anim, frame / FPS, frames / FPS);
+  app.setStatus(statusMessage('Inserted {count} frame(s) after frame {frame}', { count: frames, frame }));
+  app.changed();
+}
+
+/** Deletes `frames` frames after `frame` (the keys on them go, later keys move back). */
+function deleteFrames(app, frame, frames) {
+  const anim = app.currentAnimation();
+  if (!anim || !frames) return;
+  const { removed } = deleteTime(anim, frame / FPS, (frame + frames) / FPS);
+  app.selectedKeys.clear();
+  app.setStatus(statusMessage('Deleted {count} frame(s) after frame {frame} ({keys} key(s) removed)', { count: frames, frame, keys: removed }));
+  app.changed();
+}
+
+/** The marker of the current animation within `px` pixels of frame `frame` at this zoom, or null. */
+function markerNear(anim, frame, framesPerPx) {
+  return anim?.markers?.find((m) => Math.abs(m.time * FPS - frame) <= Math.max(1, 4 * framesPerPx)) ?? null;
+}
+
+/** The ruler's right-click menu: keys at a frame, inserting and deleting time, markers. */
+function rulerMenu(app, x, y, frame, framesPerPx = 1) {
+  const anim = app.currentAnimation();
+  const marker = markerNear(anim, frame, framesPerPx);
+  popupMenu(x, y, [
+    { label: t('Select the keys at frame {frame}', { frame }), action: () => selectKeysAt(app, frame) },
+    { label: t('Select every key shown'), action: () => selectKeysAt(app, null) },
+    'separator',
+    { label: t('Insert a frame after frame {frame}', { frame }), title: t('Every key after it moves one frame later; the animation grows'), action: () => insertFrames(app, frame, 1) },
+    { label: t('Insert frames…'), action: async () => insertFrames(app, frame, await askFrames(t('Insert how many frames after frame {frame}?', { frame }))) },
+    { label: t('Delete the frame after frame {frame}', { frame }), title: t('Keys on it are removed and later keys move one frame back'), action: () => deleteFrames(app, frame, 1) },
+    { label: t('Delete frames…'), action: async () => deleteFrames(app, frame, await askFrames(t('Delete how many frames after frame {frame}?', { frame }))) },
+    'separator',
+    marker
+      ? { label: t('Rename marker…'), action: async () => {
+          const name = await askText({ title: t('Marker name'), value: marker.name, okLabel: 'Rename' });
+          if (name !== null) {
+            marker.name = name;
+            app.changed();
+          }
+        } }
+      : { label: t('Add a marker at frame {frame}…', { frame }), title: t('A named frame on the timeline, for timing (kept in the work file, not exported)'), action: async () => {
+          const name = await askText({ title: t('Marker name'), value: '', okLabel: 'Add' });
+          if (name === null || !anim) return;
+          anim.markers.push({ time: frame / FPS, name });
+          anim.markers.sort((a, b) => a.time - b.time);
+          app.changed();
+        } },
+    marker && { label: t('Delete marker'), action: () => {
+      anim.markers.splice(anim.markers.indexOf(marker), 1);
+      app.changed();
+    } },
+  ]);
+}
+
 export function curveMenu(app, x, y, { pasteAt = null } = {}) {
   const setCurve = (curve) => () => {
     const anim = app.currentAnimation();
@@ -1424,26 +1643,39 @@ export function curveMenu(app, x, y, { pasteAt = null } = {}) {
   const sc = (action) => shortcutLabel(app.keymap, action) || undefined;
   const selected = app.selectedKeys.size > 0;
   // Copy and paste, as on the buttons (Paste here: at the frame right-clicked in the dopesheet).
+  const paste = (reversed) => {
+    if (pasteAt !== null) {
+      app.time = pasteAt;
+      app.changed();
+    }
+    pasteKeys(app, { reversed });
+  };
   const clipboard = [
     selected && { label: t('Cut'), shortcut: sc('edit.cutKeys'), action: () => cutSelectedKeys(app) },
     selected && { label: t('Copy'), shortcut: sc('edit.copyKeys'), action: () => copySelectedKeys(app) },
-    hasClipboard() && {
-      label: pasteAt !== null ? t('Paste here') : t('Paste'),
-      shortcut: sc('edit.pasteKeys'),
-      action: () => {
-        if (pasteAt !== null) {
-          app.time = pasteAt;
-          app.changed();
-        }
-        pasteKeys(app);
-      },
-    },
+    hasClipboard() && { label: pasteAt !== null ? t('Paste here') : t('Paste'), shortcut: sc('edit.pasteKeys'), action: () => paste(false) },
+    hasClipboard() && { label: pasteAt !== null ? t('Paste reversed here') : t('Paste reversed'), shortcut: sc('edit.pasteKeysReversed'), action: () => paste(true), onpreview: setPastePreviewReversed },
   ].filter(Boolean);
   if (!selected) return popupMenu(x, y, clipboard);
   popupMenu(x, y, [
     ...clipboard,
     clipboard.length && 'separator',
     { label: t('Linear'), action: setCurve(LINEAR) },
+    {
+      label: t('Auto smooth (no overshoot)'),
+      title: t('Each curve shaped from the keys around it: the motion flows through keys and never goes past them'),
+      action: () => {
+        const anim = app.currentAnimation();
+        if (!anim) return;
+        let n = 0;
+        for (const { track } of tracks(app, anim)) {
+          const keys = trackKeys(anim, track);
+          if (keys?.some((k) => app.selectedKeys.has(k))) n += applyAutoCurves(keys, app.selectedKeys);
+        }
+        app.setStatus(statusMessage('Auto smooth on {count} key(s)', { count: n }));
+        app.changed();
+      },
+    },
     { label: t('Ease in-out'), action: setCurve(EASE_IN_OUT) },
     { label: t('Ease in'), action: setCurve(EASE_IN) },
     { label: t('Ease out'), action: setCurve(EASE_OUT) },

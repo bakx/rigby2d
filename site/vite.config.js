@@ -13,6 +13,7 @@ import { defineConfig } from 'vite';
 import { DOCS, imageFiles, pageHtml, renderAll, renderMarkdown, searchIndex } from './docs/build.js';
 import { siteFooter, siteHeader } from './chrome.js';
 import { creatorsSection } from './creators.js';
+import { checkCommunityDemos, communityDemosSection, publishedPath, zipEntries, zipName } from './communitydemos.js';
 import { icon, mark } from './icons.js';
 import { feedXml, indexPage, newsJson, postPage, readPosts } from './blog/devlog.js';
 
@@ -26,6 +27,17 @@ function supportersFile() {
     name: 'rigby-site-supporters',
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'supporters.json', source: fs.readFileSync(path.join(here, 'supporters.json')) });
+    },
+  };
+}
+
+/** The funding manifest (funding.json at the repository root, https://fundingjson.org) at
+ *  https://rigby2d.com/funding.json, where FLOSS/fund and the funding.json directory read it. */
+function fundingManifest() {
+  return {
+    name: 'rigby-site-funding',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'funding.json', source: fs.readFileSync(path.join(repo, 'funding.json')) });
     },
   };
 }
@@ -260,7 +272,7 @@ function comparePages() {
     async generateBundle(_options, bundle) {
       const { COMPARISONS, comparePage } = await import('./compare/compare.js');
       for (const c of COMPARISONS) this.emitFile({ type: 'asset', fileName: `vs/${c.slug}/index.html`, source: comparePage(c) });
-      const pages = new Set(['', 'demos/', 'addons/', 'cloud/', 'fund/', 'runtimes/', 'studios/', 'blog/', 'editor/', ...COMPARISONS.map((c) => `vs/${c.slug}/`)]);
+      const pages = new Set(['', 'demos/', 'addons/', 'cloud/', 'fund/', 'runtimes/', 'studios/', 'brand/', 'blog/', 'editor/', ...COMPARISONS.map((c) => `vs/${c.slug}/`)]);
       for (const name of Object.keys(bundle)) {
         if (!name.endsWith('.html') || name.startsWith('editor/')) continue;
         pages.add(name.replace(/(^|\/)index\.html$/, '$1'));
@@ -327,6 +339,41 @@ function devlogFiles() {
   };
 }
 
+/** The Brand page's downloads: every logo in branding/logos as brand/<name>.svg and .png, at fixed
+ *  names (the page links them for download; built by branding/logos/build.mjs), and all of them with
+ *  the kit's README in brand/rigby2d-brand-kit.zip. */
+function brandFiles() {
+  const dir = path.join(repo, 'branding/logos');
+  return {
+    name: 'rigby-site-brand',
+    async generateBundle() {
+      const { zip } = await import(pathToFileURL(path.join(repo, 'src/editor/zip.js')).href);
+      const files = fs.readdirSync(dir).filter((f) => /\.(svg|png)$/.test(f));
+      for (const f of files) this.emitFile({ type: 'asset', fileName: `brand/${f}`, source: fs.readFileSync(path.join(dir, f)) });
+      const entries = ['README.md', ...files].map((f) => ({ path: `rigby2d-brand-kit/${f}`, bytes: new Uint8Array(fs.readFileSync(path.join(dir, f))) }));
+      this.emitFile({ type: 'asset', fileName: 'brand/rigby2d-brand-kit.zip', source: zip(entries) });
+    },
+  };
+}
+
+/** site/community-demos.json, checked: a broken entry stops the build instead of going live. */
+function communityDemos() {
+  const data = JSON.parse(fs.readFileSync(path.join(here, 'community-demos.json'), 'utf8'));
+  const problems = checkCommunityDemos(data, (f) => fs.existsSync(path.join(here, 'demos', f)));
+  if (problems.length) throw new Error(`site/community-demos.json:\n  ${problems.join('\n  ')}`);
+  return data;
+}
+
+/** [demo, zip bytes] for each hosted community demo: its project and LICENSE.md (made once per build). */
+let communityZipCache = null;
+async function communityZips() {
+  if (communityZipCache) return communityZipCache;
+  const { zip } = await import(pathToFileURL(path.join(repo, 'src/editor/zip.js')).href);
+  const read = (f) => new Uint8Array(fs.readFileSync(path.join(here, 'demos', f)));
+  communityZipCache = communityDemos().demos.filter((d) => d.file).map((d) => [d, zip(zipEntries(d, read))]);
+  return communityZipCache;
+}
+
 function demoFiles() {
   return {
     name: 'rigby-site-demos',
@@ -334,7 +381,8 @@ function demoFiles() {
     async transformIndexHtml(html, ctx) {
       if (!ctx.filename.replace(/\\/g, '/').endsWith('/demos/index.html')) return html;
       const license = fs.readFileSync(path.join(repo, DEMO_LICENSE), 'utf8').replace(/^# .*\n/, '');
-      let out = html.replace('<!--demo-license-->', renderMarkdown(license).html);
+      const sizes = Object.fromEntries((await communityZips()).map(([d, bytes]) => [d.id, bytes.length]));
+      let out = html.replace('<!--demo-license-->', renderMarkdown(license).html).replace('<!--community-demos-->', () => communityDemosSection(communityDemos(), sizes));
       for (const id of Object.keys(DEMOS)) out = out.replace(`{{size:${id}}}`, `${((await zipOf(id)).length / 1048576).toFixed(1)} MB`);
       return out;
     },
@@ -345,6 +393,9 @@ function demoFiles() {
         this.emitFile({ type: 'asset', fileName: `demos/rigby2d-demo-${id}.zip`, source: await zipOf(id) });
       }
       this.emitFile({ type: 'asset', fileName: 'demos/DEMO-LICENSE.md', source: fs.readFileSync(path.join(repo, DEMO_LICENSE)) });
+      // Community demos: their thumbnails, and the projects their authors let us host, zipped with their license.
+      for (const d of communityDemos().demos) this.emitFile({ type: 'asset', fileName: publishedPath(d.thumbnail), source: fs.readFileSync(path.join(here, 'demos', d.thumbnail)) });
+      for (const [d, bytes] of await communityZips()) this.emitFile({ type: 'asset', fileName: publishedPath(zipName(d)), source: bytes });
     },
   };
 }
@@ -407,13 +458,13 @@ export default defineConfig({
   root: here,
   base: process.env.SITE_BASE ?? '/',
   clearScreen: false,
-  plugins: [siteChrome(), comparePages(), socialImage(), supportersFile(), documentation(), demoFiles(), starterFiles(), addonFiles(), devlogFiles()],
+  plugins: [siteChrome(), comparePages(), socialImage(), supportersFile(), fundingManifest(), documentation(), demoFiles(), brandFiles(), starterFiles(), addonFiles(), devlogFiles()],
   // The pages import the runtime, NILA and the docs from outside this folder.
   server: { port: 1430, strictPort: true, fs: { allow: [repo] } },
   build: {
     target: 'es2021',
     outDir: path.join(repo, '_site'),
     emptyOutDir: true,
-    rollupOptions: { input: { main: path.join(here, 'index.html'), demos: path.join(here, 'demos/index.html'), addons: path.join(here, 'addons/index.html'), cloud: path.join(here, 'cloud/index.html'), fund: path.join(here, 'fund/index.html'), runtimes: path.join(here, 'runtimes/index.html'), studios: path.join(here, 'studios/index.html'), docs: path.join(here, 'docs/docs.js') } },
+    rollupOptions: { input: { main: path.join(here, 'index.html'), demos: path.join(here, 'demos/index.html'), addons: path.join(here, 'addons/index.html'), cloud: path.join(here, 'cloud/index.html'), fund: path.join(here, 'fund/index.html'), runtimes: path.join(here, 'runtimes/index.html'), studios: path.join(here, 'studios/index.html'), brand: path.join(here, 'brand/index.html'), docs: path.join(here, 'docs/docs.js') } },
   },
 });

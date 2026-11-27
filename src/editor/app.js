@@ -98,6 +98,20 @@ function loadShapes() {
   return out;
 }
 
+/** The Show and select panel's state as last left (everything shown and pickable by default). */
+function loadViewFilter() {
+  const out = { showImages: true, pick: { bones: true, images: true }, names: false };
+  try {
+    const s = JSON.parse(loadSetting('rigby.view.filter', '{}'));
+    if (typeof s?.showImages === 'boolean') out.showImages = s.showImages;
+    if (typeof s?.names === 'boolean') out.names = s.names;
+    for (const k of ['bones', 'images']) if (typeof s?.pick?.[k] === 'boolean') out.pick[k] = s.pick[k];
+  } catch {
+    // A damaged setting keeps the defaults.
+  }
+  return out;
+}
+
 /** Remembers which attachment shapes the viewport shows. */
 export function saveShapes(shapes) {
   saveSetting('rigby.view.shapes', JSON.stringify(shapes));
@@ -211,6 +225,16 @@ export class App {
      * paths and points. The selected one shows either way, so it can still be edited.
      */
     this.showShapes = loadShapes();
+    // The viewport toolbar's Show and select popover (viewfilter.js): images drawn or not, what a
+    // click can pick, bone names; remembered between sessions.
+    const filter = loadViewFilter();
+    this.showImages = filter.showImages;
+    this.pickable = filter.pick;
+    this.showNames = filter.names;
+    /** Motion paths of the selected bones in Animate mode (View menu), remembered. */
+    this.motionPaths = loadSetting('rigby.view.motionPaths', '0') === '1';
+    /** The dopesheet shows only the selection's tracks (its filter button). */
+    this.dopesheetSelectedOnly = loadSetting('rigby.timeline.selectedOnly', '0') === '1';
     /** Hides every overlay at once (View ▸ Hide overlays), to watch the animation as it renders. */
     this.hideOverlays = false;
     /**
@@ -218,8 +242,13 @@ export class App {
      * Animate mode, so Setup gives the viewport that room.
      */
     this.timelineInSetup = loadSetting('rigby.view.timelineInSetup', '0') === '1';
-    /** Setup mode: moving, turning or scaling a bone leaves its child bones and images in place. */
-    this._boneOnly = loadSetting('rigby.setup.boneOnly', '1') === '1';
+    /**
+     * Setup mode: moving, turning or scaling a bone leaves its child bones and images in place. Off
+     * by default, so a dragged bone carries its art like in other tools; on to fix a joint.
+     */
+    this._boneOnly = loadSetting('rigby.setup.boneOnly', '0') === '1';
+    /** The one-time tip that explains Bone only when a bone is first moved with it on (toolbar.js). */
+    this.boneOnlyTipDone = loadSetting('rigby.tip.boneOnly', '0') === '1';
     /** Tween lines in the dopesheet: a thin line between keys that blend into each other (View menu). */
     this.tweenLines = loadSetting('rigby.view.tweenLines', '1') === '1';
     /**
@@ -282,7 +311,8 @@ export class App {
     this.structureVersion = 0;
     /** Bumped when playback moves the time: only time-dependent views need to follow it. */
     this.timeVersion = 0;
-    this.history = { undo: [], redo: [] };
+    this.history = { undo: [], redo: [], undoLabels: [], redoLabels: [] };
+    this.labelledSerial = this.statusSerial;
     /** JSON of the last committed document state, used to coalesce edits into undo steps. */
     this.baseline = this.doc.toSnapshot();
     this.saved = this.baseline;
@@ -331,12 +361,19 @@ export class App {
     this.changed();
   }
 
+  /** Counts status changes, so a history step only takes the status line as its label when the
+   *  status changed since the last step (an edit that says nothing is labelled "Edit"). */
+  statusSerial = 0;
+  labelledSerial = 0;
+
   get status() {
     return renderStatus(this._status);
   }
 
   set status(text) {
     this._status = text;
+    this.statusSerial++;
+    this.statusAt = Date.now();
   }
 
   /** Workspace of the open project: its own, or the user's default for projects without one. */
@@ -374,7 +411,8 @@ export class App {
     this._onionCache = null;
     this.time = 0;
     this.playing = false;
-    this.history = { undo: [], redo: [] };
+    this.history = { undo: [], redo: [], undoLabels: [], redoLabels: [] };
+    this.labelledSerial = this.statusSerial;
     this.docJson = this.baseline = this.saved = doc.toSnapshot();
     this.frameRequest = true;
     this.changed();
@@ -611,6 +649,15 @@ export class App {
     this.changed();
   }
 
+  /** Selects these bones (indices); `active` becomes the one the inspector shows. */
+  selectBones(bones, active = bones[0]) {
+    const set = new Set(bones);
+    this.multi = set.size > 1 ? set : new Set();
+    this.sel = set.size ? { bone: set.has(active) ? active : [...set][0] } : null;
+    this.selectedKeys.clear();
+    this.changed();
+  }
+
   deselect() {
     this.sel = null;
     this.multi.clear();
@@ -659,6 +706,7 @@ export class App {
     const prev = this.history.undo.pop();
     if (prev === undefined) return;
     this.history.redo.push(this.docJson);
+    this.history.redoLabels.push(this.history.undoLabels.pop() ?? t('Edit'));
     this.restore(prev);
   }
 
@@ -667,7 +715,45 @@ export class App {
     const next = this.history.redo.pop();
     if (next === undefined) return;
     this.history.undo.push(this.docJson);
+    this.history.undoLabels.push(this.history.redoLabels.pop() ?? t('Edit'));
     this.restore(next);
+  }
+
+  /** Keeps the undo list within Preferences ▸ Editing ▸ Undo steps (labels alongside). */
+  trimHistory() {
+    while (this.history.undo.length > this.prefs.get('editing.undoSteps')) {
+      this.history.undo.shift();
+      this.history.undoLabels.shift();
+    }
+    // Labels can fall out of step if something else touched the lists: pad or trim to match.
+    while (this.history.undoLabels.length < this.history.undo.length) this.history.undoLabels.unshift(t('Edit'));
+    this.history.undoLabels.length = this.history.undo.length;
+  }
+
+  /**
+   * The undo history for Edit ▸ Undo history: the steps done (oldest first) and those undone, each
+   * { label, offset }: -n is n steps back, 0 where you are, +n is n steps redone.
+   */
+  historyEntries() {
+    const done = this.history.undoLabels.map((label, i) => ({ label, offset: i - this.history.undoLabels.length }));
+    const undone = [...this.history.redoLabels].reverse().map((label, i) => ({ label, offset: i + 1 }));
+    return { done, undone };
+  }
+
+  /** Jumps `offset` steps through the history (negative: undo, positive: redo). */
+  jumpHistory(offset) {
+    for (let i = 0; i < -offset; i++) this.undo();
+    for (let i = 0; i < offset; i++) this.redo();
+  }
+
+  /** The status line's text now (status is text or a function that renders it in the language). */
+  statusText() {
+    const s = this.status;
+    try {
+      return String(typeof s === 'function' ? s() : (s ?? '')).trim();
+    } catch {
+      return '';
+    }
   }
 
   restore(json) {
@@ -713,9 +799,15 @@ export class App {
     this.syncJson();
     if (this.docJson !== this.baseline) {
       this.history.undo.push(this.baseline);
+      // What the step did, for Edit ▸ Undo history: the status line the edit left, as it reads now.
+      // The status line names the step only when the edit itself just set it (not a notice from opening).
+      const fresh = this.statusSerial !== this.labelledSerial && Date.now() - (this.statusAt ?? 0) < 2000;
+      this.history.undoLabels.push((fresh && this.statusText()) || t('Edit'));
+      this.labelledSerial = this.statusSerial;
       this.baseline = this.docJson;
       this.history.redo = [];
-      while (this.history.undo.length > this.prefs.get('editing.undoSteps')) this.history.undo.shift();
+      this.history.redoLabels = [];
+      this.trimHistory();
     }
   }
 
@@ -1336,8 +1428,10 @@ export class App {
       if (opts.undo) {
         this.syncJson();
         this.history.undo.push(this.docJson);
-        while (this.history.undo.length > this.prefs.get('editing.undoSteps')) this.history.undo.shift();
+        this.history.undoLabels.push(t('Edit in another window'));
+        this.trimHistory();
         this.history.redo = [];
+        this.history.redoLabels = [];
       }
       const prev = this.doc;
       this.doc = Skeleton.fromObject(JSON.parse(s.docJson));

@@ -21,7 +21,7 @@ they do not change an already-open editor document. Reload that document after e
   Hints may also be stored in `<PSD basename>.joints.json`, as that object or its inner map, or
   drawn as small PSD layers named `joint:shoulder_l` or `@shoulder_l` (the layer's centre is the
   joint; these layers are not imported as art). Arguments beat the sidecar, which beats layers. The core `autoRig` function takes **world** points.
-- `.skel` files of format 4.2 and 4.3 open; `.skel` exports are written as 4.3. A 4.2 rig whose IK
+- `.skel` files of format 4.0 through 4.3 open; `.skel` exports are written as 4.3. A 4.2 rig whose IK
   uses compress/stretch/uniform/softness or whose physics sets a mix cannot be written as `.skel`
   yet (`validate_project` reports `binaryExport`); export it as skeleton JSON instead.
 - Every MCP input/output must be under a configured workspace root. Output folders must exist.
@@ -36,8 +36,9 @@ they do not change an already-open editor document. Reload that document after e
 | Task | MCP | Python `rigby` / add-ons | Editor |
 | --- | --- | --- | --- |
 | Bones, slots, animations and keys | Editing tools, `batch_edit`, world keys | Bone/Slot/Animation objects; `space="world"` | Yes |
+| Slot layout, draw order and paths | `add_slot`, `move_slot`, `set_slot_bone`, `set_draw_order_key`, `set_slot_color_key`, `add_path_attachment` | `add_slot`, `set_draw_order`, `Animation.key_draw_order`, `Slot.key_color` | Yes |
 | IK, transform, path, physics, slider | `add_constraint`, `set_constraint`, `delete_constraint`, `set_constraint_key` | `constraints`, `add_constraint`, `Constraint.set/delete`, `Animation.key_constraint` | Yes |
-| Region attachments and skins | `add_attachment`, `replace_image`, `duplicate_attachment` (same mesh/weights under a new name, for `replace_image` + `set_attachment_key` variants), `add_skin`, `set_skin_attachment`, `delete_skin` | `Slot.add_attachment` using an existing project image; `Slot.duplicate_attachment`; `add_skin`, `Skin.set_attachment/delete` | Yes |
+| Region attachments and skins | `add_attachment` (including `scale_x`/`scale_y`), `delete_attachment`, `replace_image`, `duplicate_attachment` (same mesh/weights under a new name, for `replace_image` + `set_attachment_key` variants), `add_skin`, `set_skin_attachment`, `delete_skin` | `Slot.add_attachment` using an existing project image; `Slot.duplicate_attachment`; `add_skin`, `Skin.set_attachment/delete` | Yes |
 | Meshes and weights | `make_mesh` outline/grid, `auto_weight`, `set_weights`, `smooth_weights`, `merge_parts` (join rigid pieces into one bending mesh) | `Slot.make_mesh`, `Mesh.data/vertices/triangles/weights`, weight methods | Yes, including manual vertex editing |
 | Events | `add_event`, `set_event_key` | `add_event`, `events`, `Animation.key_event` | Yes |
 | Art preparation | `cutout_image` (flat background off, fringe un-mixed, `mask_polygons` cut parts from one image), `build_psd` (layers from PNG/JPG/WebP), `cutout` option on `add_attachment` / `replace_image` | Use MCP | Image import |

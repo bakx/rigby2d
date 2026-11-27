@@ -3,7 +3,7 @@
 // says Rigby2D is free and shows the monthly goal (from /supporters.json) with a way to support it.
 // It shows at most once a week per browser, so it never nags.
 
-import { loadSupporters, SPONSOR_URL as SPONSOR } from './supporters.js';
+import { KOFI_URL as KOFI, loadSupporters, SPONSOR_URL as SPONSOR } from './supporters.js';
 
 const WEEK = 7 * 24 * 3600 * 1000;
 const KEY = 'rigby2d.thanks.shown';
@@ -42,17 +42,18 @@ async function show() {
     'dialog',
     { class: 'thanks', 'aria-labelledby': 'thanks-title' },
     el('h2', { id: 'thanks-title' }, 'Thanks for downloading Rigby2D'),
-    el('p', {}, 'Your download has started. Rigby2D is free and stays free. A few dollars a month pays for code signing in its name, so Windows and macOS stop warning the next person who downloads it.'),
+    el('p', {}, 'Your download has started. Rigby2D is free and stays free, built by one developer in the hours around a day job. A few dollars a month buys back those hours: first a full day every week on Rigby2D, then full time.'),
     el(
       'div',
       { class: 'goal' },
-      el('div', { class: 'goal-top' }, el('span', { class: 'goal-title' }, g?.title ?? 'Signed by Rigby2D'), el('span', { class: 'goal-amount' }, `$${g?.monthly ?? 25} a month`)),
+      el('div', { class: 'goal-top' }, el('span', { class: 'goal-title' }, g?.title ?? 'Rigby2D Fridays'), el('span', { class: 'goal-amount' }, `$${g?.monthly ?? 250} a month`)),
       el('div', { class: 'goal-bar' }, fill),
     ),
     el(
       'div',
       { class: 'thanks-actions' },
       el('a', { class: 'btn primary', href: SPONSOR, rel: 'noopener', target: '_blank', 'data-goatcounter-click': 'site-download-thanks-sponsor' }, 'Support Rigby2D'),
+      el('a', { class: 'btn', href: KOFI, rel: 'noopener', target: '_blank', 'data-goatcounter-click': 'site-download-thanks-kofi' }, 'Ko-fi'),
       el('a', { class: 'btn', href: '/fund/', 'data-goatcounter-click': 'site-download-thanks-fund' }, 'Where the money goes'),
       close,
     ),

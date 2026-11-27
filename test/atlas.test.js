@@ -128,5 +128,5 @@ test('pack: shelves fill power-of-two pages and refuse an image larger than a pa
   assert.equal(pages.length, 1);
   assert.equal(pages[0].width & (pages[0].width - 1), 0);
   assert.deepEqual(pages[0].regions.map((r) => r.name), ['a', 'b']);
-  assert.throws(() => pack([{ name: 'big', width: 200, height: 10 }], { maxSize: 128 }), /does not fit/);
+  assert.throws(() => pack([{ name: 'big', width: 200, height: 10 }], { maxSize: 128 }), /is bigger than an atlas page/);
 });

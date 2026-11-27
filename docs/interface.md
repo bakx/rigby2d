@@ -3,7 +3,7 @@
 The editor is one window with five areas around the viewport. Panels can be resized by dragging the
 borders between them (double-click a border to reset it), and in the desktop app the Timeline, Tree
 and Inspector can be popped out into their own windows. The side panels start narrow, so the viewport
-gets most of the room; *View ▸ Layouts* saves an arrangement you like.
+gets most of the room; *View ▸ Panels* saves an arrangement you like.
 
 ![The editor with numbered areas: 1 menus, 2 workspace switch, 3 viewport toolbar, 4 viewport, 5 tree, 6 inspector, 7 timeline controls, 8 dopesheet, 9 status bar](images/interface-tour.jpg "The parts of the editor")
 
@@ -11,13 +11,21 @@ gets most of the room; *View ▸ Layouts* saves an arrangement you like.
 | --- | --- | --- |
 | 1 | **Menu bar** | *File* (with *New*, *Open recent*, *Import* and *Export* submenus), *Edit*, *View*, *Scripts* and *Help* (see [The Help menu](#the-help-menu)), the **SETUP** and **ANIMATE** mode tabs, and buttons for *Undo*, *Redo*, *Fit the skeleton in view* and *Show or hide bones* (hover one to see its shortcut). When an update is ready, an **Update available** button appears here too. |
 | 2 | **Workspace switch** | **Game** or **Film**: which tools are shown. See [Workspaces](#workspaces). |
-| 3 | **Viewport toolbar** | Transform tools, the active tool's values with a key button, axes, **Bone only** (Setup mode), **Weights** (when a mesh is selected), onion skin, guides and auto key. |
+| 3 | **Viewport toolbar** | Transform tools, the active tool's values with a key button, axes, **Bone only** (Setup mode), **Show** (what the viewport draws and what a click picks), **Weights** (when a mesh is selected), onion skin, guides and auto key. |
 | 4 | **Viewport** | The character. Select, pose and edit here. |
 | 5 | **Tree** | The skeleton (bones, slots, attachments) and the draw order, skins, constraints, events, animations and images. |
 | 6 | **Inspector** | Properties of the selection (a bone, slot, constraint, skin or event) and, on its **Project** tab, the project settings. Poses and face controls sit at the bottom. |
 | 7 | **Timeline controls** | Animation list, **+** (new animation), length, playback, loop, speed, the time display and **Key**. |
 | 8 | **Dopesheet / Graph** | Keys over time, or their curves. |
 | 9 | **Status bar** | Messages, rig statistics and zoom, and the **Log** button. |
+
+## Command search
+
+Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (<kbd>F3</kbd> with the Blender-like keys), or
+*Help ▸ Find a command…*, and type part of what you want: *frame*, *paste rev*, *tween*. It lists every
+menu item, submenus included, with the menu it sits in and its shortcut, and every keyboard action.
+Use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd> to run one, <kbd>Esc</kbd> to close. Commands that
+can't run now (nothing selected, the wrong mode) are listed last and greyed out.
 
 ## Modes: Setup and Animate
 
@@ -39,13 +47,35 @@ work in both modes; only the result differs.
 | To | Do |
 | --- | --- |
 | Select a bone or image | Click it. |
+| Pick what's underneath | <kbd>Alt</kbd>+click again and again: it steps through everything under the cursor (the bones nearest first, then each image front to back). The status bar says which one of how many. |
 | Add to or remove from the selection | <kbd>Ctrl</kbd>+click. |
+| Select all bones, or the parent, children or whole branch of the selection | *Edit ▸ Select all bones* (<kbd>Ctrl</kbd>+<kbd>A</kbd>) and *Edit ▸ Select related* (<kbd>[</kbd>, <kbd>]</kbd>, <kbd>Ctrl</kbd>+<kbd>]</kbd>). Hidden and locked bones are left out. |
 | Box select | Drag in empty space (with <kbd>Ctrl</kbd> held, adds to the selection). |
 | Transform the selection | Drag it with the active tool, or drag empty space while bones are selected. |
 | Pan | Right or middle drag. |
 | Zoom | Mouse wheel. |
 | Fit the skeleton in view | The fit button in the menu bar, or *View ▸ Fit the skeleton in view* (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>). |
+| Zoom to the selection | *View ▸ Frame the selection* (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd>; <kbd>.</kbd> with the Blender-like keys). |
 | Deselect | <kbd>Esc</kbd>, or click empty space. |
+| Rename, duplicate, hide, lock or delete what's under the cursor | Right-click it (without moving): the same menu as its row in the tree. Right-drag still pans. |
+
+### Show and select
+
+The **Show** button on the viewport toolbar opens a small table that says, for each kind of
+thing, whether it is **shown** (eye), whether a click or a box can **pick** it (arrow), and for
+bones whether their **names** are drawn (tag). Click a dot to switch it; the table stays open until
+you click elsewhere:
+
+| Row | What it covers |
+| --- | --- |
+| Bones | Every bone. Turn off picking to click and box-select images only. |
+| Images and meshes | All the art. Turn off picking to work on the bones without grabbing the art (clicks go to the bones or pass through); hide them to see the skeleton alone. |
+| Shapes | Clipping masks, bounding boxes, paths and points together (*View ▸ Shapes* sets them one by one; a half-filled dot means some are on). |
+
+While anything is hidden or can't be picked, the **Show** button turns blue and its eye is crossed
+out, so a hidden kind is never forgotten. The settings are remembered, and only change the editor's
+view: the project, its undo history and its exports are the same either way. The eye
+and lock on each tree row still work per bone and slot (see [Show and lock](#show-and-lock)).
 
 Hovering a bone — in the viewport, the tree or a timeline track — highlights it in all three at
 once with a short glow, so you can tell which bone is which across the panels (and across detached
@@ -59,12 +89,12 @@ panel windows). The selection is shown the same way.
 | --- | --- | --- |
 | **Pose** | <kbd>B</kbd> | Drag a bone to aim it at the cursor; drag near its origin to move it. The quickest way to pose. |
 | **Create** | <kbd>N</kbd> | Drag to draw a bone (Setup mode). Select a bone first to chain the new one from it. |
-| **Rotate** | <kbd>C</kbd> | Rotates the selection. |
+| **Rotate** | <kbd>C</kbd> | Rotates the selection. Hold <kbd>Shift</kbd> to turn in 15° steps. |
 | **Translate** | <kbd>V</kbd> | Moves the selection. Hold <kbd>Shift</kbd> while dragging to move along one axis only. |
 | **Scale** | <kbd>X</kbd> | Scales the selection. |
 | **Shear** | <kbd>Z</kbd> | Shears the selection. |
 
-Keys are those of the default *Spine-like* preset; a *Blender-like* preset is under *View*. See
+Keys are those of the default *Spine-like* preset; a *Blender-like* preset is in *Preferences ▸ Interface*. See
 [Keyboard shortcuts](shortcuts.md).
 
 Next to the tools, the active tool's values for the selected bone can be dragged or typed. In
@@ -79,32 +109,48 @@ direction the Translate tool moves.
 
 ### View options
 
-The *View* menu chooses what is drawn over the art:
+The *View* menu has three groups.
 
-- *Show bones*, *Show clipping masks*, *Show bounding boxes*, *Show paths* and *Show points*, one
-  switch per kind (remembered between sessions). A shape you select stays visible even when its kind
-  is hidden, so you can still edit it. The bone button in the menu bar and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>
-  also show or hide bones.
-- *Show output frame* (Film workspace).
-- **Hide overlays** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>, or <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>Z</kbd>
-  with the Blender-like shortcuts) hides bones, shapes, selection outlines and guides at once, to
-  watch the animation as it renders. Press it again to bring them back.
-- *Timeline in Setup mode* keeps the timeline on screen in Setup mode.
-- *Tween lines* draws a thin line in the dopesheet between keys that blend into each other (on by
-  default). See [The dopesheet](animating.md#the-dopesheet).
+**Viewport**, what is drawn over the art (remembered between sessions):
+
+- *Show bones*. The bone button in the menu bar and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>
+  do the same.
+- *Bone size*: a slider (50% to 250%) for how big bones are drawn, smaller for tiny or pixel-art
+  characters and bigger for large ones. The viewport follows as you drag; *Normal size* puts it back.
+  Bones stay as easy to click at any size.
+- *Shapes*: clipping masks, bounding boxes, paths and points, one switch per kind. A shape you
+  select stays visible even when its kind is hidden, so you can still edit it.
 - *Bone links* draws a dashed line from a bone to its parent wherever the child doesn't start at its
   parent's tip, so the hierarchy reads in the viewport: *Selected branch* (the default: the selected
   bones up to the root and down to their children), *All bones* or *Off*.
+- *Show output frame* and *Preview film effects* (Film workspace).
+- **Hide overlays** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>, or <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>Z</kbd>
+  with the Blender-like shortcuts) hides bones, shapes, selection outlines and guides at once, to
+  watch the animation as it renders. Press it again to bring them back.
+- *Show and unlock all* undoes every eye and lock set in the tree.
 
-It also has the **Log** window, *Panel layout*, *Layouts* (see [Saved layouts](#saved-layouts)) and
-zoom commands. The viewport
-renderer and the shortcut preset are in [Preferences](preferences.md) (*Interface*).
+**Timeline**:
+
+- *Timeline in Setup mode* keeps the timeline on screen in Setup mode.
+- *Tween lines* draws a thin line in the dopesheet between keys that blend into each other (on by
+  default). See [The dopesheet](animating.md#the-dopesheet).
+
+**Window**:
+
+- *Panels*: the **Rig panel** (skins, constraints, meshes and events in a panel of their own, left
+  of the viewport, so the tree keeps only the bone hierarchy), your [saved layouts](#saved-layouts),
+  and *Reset panels*.
+- *Themes…* and the **Log** window.
+
+The menu ends with the zoom commands. The viewport renderer and the shortcut preset are in
+[Preferences](preferences.md) (*Interface*).
 
 ## Tree
 
 The tree has collapsible sections:
 
-- **Skeleton**: bones in their hierarchy, each with its slots. Guide lines join each bone to its
+- **Skeleton**: bones in their hierarchy, each with its slots. Double-click a name, or press
+  <kbd>F2</kbd>, to rename it in place (Setup mode); <kbd>Enter</kbd> applies, <kbd>Esc</kbd> cancels. Guide lines join each bone to its
   children and run down past open branches, so deep rigs stay readable. A slot shows its visible attachment
   next to its name; click **▸** (with the number of attachments) to list them all, and click one to
   show it (in Animate mode, that sets an image-swap key). **+ Bone** adds a child to the selected
@@ -112,7 +158,9 @@ The tree has collapsible sections:
   tip. **Collapse all bones** shows the root and its immediate children. **Expand all bones** opens
   the full hierarchy. The **Find** box at the top shows only the bones and slots whose names contain
   what you type (with the bones above them), and Esc clears it. In Setup mode, drag a bone's row onto another bone
-  to make that its parent, or onto the skeleton's title for the root; the bone keeps its place.
+  to make that its parent, or onto the skeleton's title for the root; drag a slot's row onto a bone
+  to move the slot there. Either way it keeps its place in the viewport. A slot that skins give
+  images to shows their names as small tags (the skins shown now are highlighted).
 - **Draw order**: slots back to front; *Draw in front* and *Draw behind* move the selected slot, or
   drag a row to drop it anywhere (a side preview shows its image between its new neighbours as you
   drag). See [Draw order](bones-and-slots.md#draw-order).
@@ -122,6 +170,20 @@ The tree has collapsible sections:
 
 Bones also have an onion-skin button that limits onion skinning to that bone and its children.
 See [Onion skin](onion-skin.md).
+
+### Undo history
+
+*Edit ▸ Undo history* lists your recent steps by what they did ("Pasted the pose on 1 bone",
+"hand_right is now on forearm_r"), oldest at the top, then *Now*, then the steps you undid. Pick a step
+to go back to just before it, or forward to it. Preferences ▸ Editing ▸ Undo steps sets how many are
+kept.
+
+### Right-click menus
+
+Right-click a bone's row for *Rename…*, *Add child bone*, *Add point bone*, *Hide* and *Lock* (also
+with its children), *Select its keys* in the current animation, and *Delete*. A slot's row has
+*Rename…*, *Hide*, *Lock*, *Select its keys* and *Delete*. Renaming, adding and deleting work in
+Setup mode.
 
 ### Show and lock
 
@@ -228,9 +290,21 @@ any colour that is missing or does not read falls back to Rigby Dark's (Rigby Li
 warnings and errors with expandable tracebacks. Filter by level or text, and **Copy** entries for a
 bug report. The status bar button turns red and counts errors you have not seen yet.
 
+## Moving panels
+
+The Tree, Inspector, Timeline and Rig panels sit in three regions around the viewport: left, right and
+bottom. Drag a panel by its tab:
+
+- onto another panel's tab strip, and the two share that space as tabs;
+- onto the edge of a panel, and it gets its own space next to it;
+- onto an edge of the viewport, and it docks on that side.
+
+Drag the borders between panels to resize them; double-click a border to reset it. *View ▸ Panels ▸
+Reset panels* puts everything back.
+
 ## Saved layouts
 
-*View ▸ Layouts* saves your panel arrangement under a name and loads it again later:
+*View ▸ Panels* saves your panel arrangement under a name and loads it again later:
 
 - **Save current layout…** stores where each panel sits and how wide or tall the panel areas are.
   In the desktop app it also stores which panels are popped out into their own windows, and where.
@@ -238,7 +312,7 @@ bug report. The status bar button turns red and counts errors you have not seen 
 - **Manage layouts…** renames, updates and deletes layouts, and binds a shortcut
   (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd> to <kbd>9</kbd>) that loads a layout.
 
-*View ▸ Panel layout ▸ Reset layout* puts every panel back in its default place and size. Layouts are
+*View ▸ Panels ▸ Reset panels* puts every panel back in its default place and size. Layouts are
 kept on this computer (in the browser editor, in this browser).
 
 ## Detached panels
@@ -253,13 +327,14 @@ next time that panel pops out.
 
 | Item | What it does |
 | --- | --- |
-| *What's new in 0.5…* | A short tour of this release. |
+| *What's new in 0.6…* | A short tour of the latest big release. |
 | *Welcome screen…* | New projects, recent work, demos and lessons. |
+| *Find a command…* | [Command search](#command-search): run any menu item or action by name. |
 | *Tutorials…*, *Keyboard shortcuts…* | Interactive lessons, and every shortcut with a search. |
 | *Documentation* | These pages. |
 | *Connect an AI assistant…* | Sets up the [MCP server](mcp.md) for an AI assistant. |
 | *Community ▸* | *Discord* (the community), the *Devlog* (release news) and this version's *Release notes*. |
 | *Report a problem ▸* | *Report an issue* on GitHub, or *Report a crash…*: a report of recent errors to copy or post. |
 | *Support Rigby2D…* | The monthly goal, the Founding Supporters, everyone who funds Rigby2D and the code contributors, with a link to sponsor. |
-| *Check for updates…* | Desktop app: looks for a new version now (it also checks at startup). |
+| *Check for updates…* | Desktop app: looks for a new version now (it also checks at startup and every few hours; *Preferences ▸ General*). |
 | *About Rigby2D* | Version, licenses and credits. |

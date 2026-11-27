@@ -73,6 +73,45 @@ The dopesheet shows a row for every keyed channel of the animation: each bone's 
 scale and shear, slot images and colors, mesh deformation, image sequences, IK and other constraints,
 draw order and events. Diamonds are keys; their color tells the curve (stepped keys are purple).
 
+Rows are grouped by bone and slot: bones in hierarchy order (parents first), then slots, each with
+its channels together. A group's name is written once, in bold, on its first row; the rows below show
+only the channel. The **filter** button next to *Dopesheet* and *Graph* shows only the selected bones'
+and slots' rows (every row when nothing is selected), which keeps a 40-bone rig readable.
+
+Above the rows, the ruler marks every frame that has a key in the rows shown, so the timing of the
+whole animation reads at a glance. Right-click the ruler to **select the keys at that frame** (to move
+a whole pose in time) or **every key shown**.
+
+### Motion paths
+
+*View ▸ Motion paths* draws, in Animate mode, where the tip of each selected bone goes over the whole
+animation: a line through every frame, a larger dot on each key and a ring at the current frame. Use
+it to check arcs and spacing. It's an editor overlay only.
+
+### Inserting and deleting time
+
+Right-click the ruler at a frame:
+
+- *Insert a frame after frame N* (or *Insert frames…* for several): every key after it, in every
+  track (bones, slots, deform, IK and constraints, sequences, draw order, events and markers), moves
+  later, and the animation grows. Use it to give a move more time without retiming keys by hand.
+- *Delete the frame after frame N* (or *Delete frames…*): the keys on those frames are removed, later
+  keys move back, and the animation gets shorter.
+
+### Markers
+
+Right-click the ruler ▸ *Add a marker at frame N…* names a frame: a contact, a beat of the music, a
+line of dialogue. Markers show as amber flags with their names on the ruler. Right-click one to
+rename or delete it. They move with *Insert* and *Delete time*, are kept in the work file and part of
+undo, and are never exported.
+
+### Breakdowns
+
+The **breakdown** button (next to retime) poses the selected bones part of the way between their
+previous and next keys, and keys that pose at the playhead: drag its slider (0% is the previous key,
+100% the next), or pick 25%, 50% or 75%. With nothing selected it works on every keyed bone. It's the
+quickest way to favour one key in an in-between, as with the breakdown tools of Blender and Harmony.
+
 A thin **tween line** joins each key to the next where the value blends between them, so you can see at
 a glance where something moves and where it holds. A stepped key has no line after it, and image
 swaps, draw order and events never have one, since they switch exactly on the key. Turn the lines off
@@ -109,6 +148,10 @@ green and a preview follows the time cursor; move it to where the first key shou
   Keys about to be erased show a red ✕ in the preview.
 - A paste that runs past the end of the animation asks whether to extend the animation, paste what
   fits, or cancel.
+- **Paste reversed** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>, *Edit ▸ Paste keys reversed*, or
+  right-click ▸ *Paste reversed here*) lays the keys down back to front over the same span, with
+  every ease mirrored, so the copied motion plays backwards: copy a reach and paste it reversed for
+  the return. Stepped keys stay stepped.
 
 Copy and paste work in the detached timeline too.
 

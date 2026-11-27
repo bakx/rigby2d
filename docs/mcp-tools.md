@@ -9,7 +9,7 @@ root folders. Editing tools save the file in its own format, or a copy when `out
 
 <!-- generated:mcp-tools -->
 
-The server has **70 tools**. Parameters marked **required** must be given; the others are optional.
+The server has **78 tools**. Parameters marked **required** must be given; the others are optional.
 
 ### `world_to_local`
 
@@ -116,7 +116,7 @@ Check a project for problems: structure, images missing from its work file, atla
 
 ### `convert_project`
 
-Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel. With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.
+Write a project as skeleton JSON (format 3.8, 4.2 or 4.3) or binary .skel (4.3). Reads .rigby, .json or .skel (4.0 through 4.3). With atlas: true it also packs the images the skeleton uses into <name>.atlas and <name>.png next to the output (more pages, <name>_2.png…, when max_size overflows), ready for a game runtime; texture_format writes the pages as WebP or KTX2 (Basis Universal ETC1S/UASTC, GPU-compressed) instead. Otherwise only skeleton data is written. Refuses to replace existing files unless overwrite is true.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -477,7 +477,7 @@ Simulate physics constraints over an animation and write the result as ordinary 
 
 ### `add_attachment`
 
-Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. Does not change slot visibility.
+Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optional cutout of its flat background. Coordinates default to bone local space; world uses the setup pose. scale_x/scale_y size the image (0.25 shows a 4x image at 1x). Does not change slot visibility.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -488,6 +488,8 @@ Add a PNG/JPG/WebP region to a slot, optionally in a named skin, with an optiona
 | `x` | number |  |
 | `y` | number |  |
 | `rotation` | number |  |
+| `scale_x` | number |  |
+| `scale_y` | number |  |
 | `skin` | string |  |
 | `space` | `'local'`, `'world'` |  |
 | `cutout` | object | Remove a flat background first, as cutout_image does: background auto \| white \| #rrggbb, tolerance, mode flood \| global, holes, defringe, ink, despeckle, crop none \| bounds, mask_polygons. |
@@ -536,6 +538,105 @@ Join region slots (e.g. upper arm and forearm) into one new outline mesh slot, c
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
+### `add_slot`
+
+Add an empty slot on a bone, placed in draw order just after or before another slot (default: on top). Give it attachments with add_attachment or add_path_attachment.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `name` **required** | string |  |
+| `bone` **required** | string |  |
+| `after` | string |  |
+| `before` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `move_slot`
+
+Move a slot in setup draw order to just after or before another slot.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `after` | string |  |
+| `before` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_slot_bone`
+
+Move a slot (and its attachments, which keep their setup-pose place) to another bone.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `bone` **required** | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_draw_order_key`
+
+Key a draw order in an animation: moves ({slot, after|before}) are applied in turn to the setup order; none (or reset: true) keys the setup order back. Stepped.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `time` **required** | number |  |
+| `moves` | list of object |  |
+| `reset` | boolean |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `set_slot_color_key`
+
+Key a slot's alpha (0..1) or colour (#rrggbb / #rrggbbaa) in an animation, e.g. to show or hide whole slots stepped (alpha 0/1, curve stepped) while attachment keys stay free for swaps.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `animation` **required** | string |  |
+| `slot` **required** | string |  |
+| `time` **required** | number |  |
+| `alpha` | number |  |
+| `color` | string |  |
+| `curve` | `'linear'`, `'stepped'`, `'easeIn'`, `'easeOut'`, `'easeInOut'` or list of number | Interpolation to the next key: 'linear' (default), 'stepped', 'easeIn', 'easeOut', 'easeInOut', or a custom cubic bezier [cx1, cy1, cx2, cy2] with control points in key-to-key space (time 0..1 on x, value 0..1 on y; x must stay within 0..1), as in CSS cubic-bezier(). |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `delete_attachment`
+
+Delete an attachment (and its deform keys) from a slot. Refused while the setup pose or an attachment key still shows it.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `attachment` **required** | string |  |
+| `skin` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `add_path_attachment`
+
+Add a path attachment (cubic beziers) for path constraints. points are world setup-pose points, 3 per anchor in skeleton-JSON order: in handle, anchor, out handle (an open path ignores the first in and last out handle). weights, one [{bone, weight}] list per point, bind it to bones like a mesh; without them it follows the slot bone. Curve lengths are computed.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
+| `slot` **required** | string |  |
+| `name` **required** | string |  |
+| `points` **required** | list of list of number |  |
+| `weights` | list of list of object |  |
+| `closed` | boolean |  |
+| `constant_speed` | boolean |  |
+| `skin` | string |  |
+| `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
 ### `add_event`
 
 Add an event definition with default values.
@@ -552,12 +653,12 @@ Add an event definition with default values.
 
 ### `batch_edit`
 
-Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, set_ik_target_key, add_skin, delete_skin, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, bake_physics, add_attachment, replace_image, set_skin_attachment, merge_parts, add_event, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot, set_film_effects, set_layer_effects, set_emitter and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
+Apply many edits in one call, loading and saving the project once, atomically: all of them are saved, or none. Each operation is { op, ...arguments } where op is one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, set_ik_target_key, add_skin, delete_skin, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, bake_physics, add_attachment, replace_image, set_skin_attachment, merge_parts, add_slot, move_slot, set_slot_bone, set_draw_order_key, set_slot_color_key, delete_attachment, add_path_attachment, add_event, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot, set_film_effects, set_layer_effects, set_emitter and the arguments are that tool's (without path, output and overwrite). Operations run in order, so later ones can use what earlier ones created (add_animation, then its keys). Much faster than one call per key for building animations. Curves can be presets or a custom bezier [cx1, cy1, cx2, cy2].
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `path` **required** | string | Project file: a .rigby work file or a skeleton .json / .skel export. Relative paths resolve against the first workspace root. |
-| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, set_ik_target_key, add_skin, delete_skin, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, bake_physics, add_attachment, replace_image, set_skin_attachment, merge_parts, add_event, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot, set_film_effects, set_layer_effects, set_emitter. |
+| `operations` **required** | list of object | The edits, in order: { op, ...that tool's arguments } with op one of add_bone, set_bone_setup, add_animation, set_bone_key, delete_bone_key, set_attachment_key, set_event_key, add_constraint, set_constraint, delete_constraint, set_constraint_key, set_ik_target_key, add_skin, delete_skin, duplicate_attachment, make_mesh, auto_weight, set_weights, smooth_weights, bake_physics, add_attachment, replace_image, set_skin_attachment, merge_parts, add_slot, move_slot, set_slot_bone, set_draw_order_key, set_slot_color_key, delete_attachment, add_path_attachment, add_event, set_workspace, set_output, save_pose, apply_pose, delete_pose, add_face_control, set_face_control, delete_face_control, add_audio_track, set_audio_track, remove_audio_track, lip_sync, rename_bone, rename_animation, delete_animation, set_slot, set_film_effects, set_layer_effects, set_emitter. |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
@@ -865,6 +966,16 @@ Re-import PSD pixels and placement by layer/attachment name, preserving bones, s
 | `psd_file` **required** | string | Layered artwork (.psd) inside the workspace, one layer per body part. Instead of path. |
 | `mode` | `'images'`, `'add_missing'` |  |
 | `output` | string | Save to this file instead of changing the input (same format as the input, inside the workspace). |
+| `overwrite` | boolean | Replace `output` if it already exists (default false). |
+
+### `import_aseprite`
+
+Turns an Aseprite file (.aseprite / .ase) into a new .rigby work file, like the editor's File > Import > Aseprite: every image layer becomes a slot on the root bone where it was drawn, with one image per different picture it shows; each tag (or the whole timeline) becomes an animation that swaps the images at Aseprite's frame durations. Hidden layers become variant animations. Pixel art stays sharp. Rig it afterwards with autorig or the edit tools.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `aseprite_file` **required** | string | The Aseprite file (.aseprite or .ase) inside the workspace. |
+| `output` **required** | string | The new .rigby work file to write. |
 | `overwrite` | boolean | Replace `output` if it already exists (default false). |
 
 ### `map_bones`
